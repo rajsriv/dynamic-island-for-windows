@@ -61,6 +61,9 @@ class MediaMonitor(QThread):
                 return
 
             info = self.current_session.get_playback_info()
+            if not info:
+                self.media_updated.emit("Idle", "", "", "#000000")
+                return
             status = info.playback_status
             
             state_str = "Idle"

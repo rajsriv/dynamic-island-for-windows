@@ -7,9 +7,8 @@ def get_stylesheet(accent_color: str = "#0078D7") -> str:
     """
     return f"""
     QWidget#IslandWidget {{
-        background-color: rgb(15, 15, 15);
-        border-radius: 20px;
-        border: 1px solid rgba(255, 255, 255, 30);
+        background-color: #000000;
+        border: 1.2px solid rgba(255, 255, 255, 40);
     }}
     
     QLabel {{
@@ -50,21 +49,26 @@ def get_stylesheet(accent_color: str = "#0078D7") -> str:
         background-color: rgba(255, 255, 255, 50);
     }}
     
-    QProgressBar {{
-        border: none;
-        background-color: rgba(255, 255, 255, 20);
-        border-radius: 4px;
-        text-align: right;
-    }}
-    
-    QProgressBar::chunk {{
-        background-color: {accent_color};
-        border-radius: 4px;
-    }}
     
     QLabel#PerfLabel {{
-        font-size: 10px;
+        font-size: 11px;
         color: #CCCCCC;
         font-weight: 600;
+    }}
+
+    QPushButton#ActionButton {{
+        background-color: rgba(255, 255, 255, 15);
+        color: white;
+        border-radius: 16px;
+        border: 1px solid rgba(255, 255, 255, 10);
+    }}
+    
+    QPushButton#ActionButton:hover {{
+        background-color: rgba(255, 255, 255, 35);
+        border: 1px solid rgba(255, 255, 255, 40);
+    }}
+
+    QPushButton#ActionButton:pressed {{
+        background-color: rgba(255, 255, 255, 50);
     }}
     """
