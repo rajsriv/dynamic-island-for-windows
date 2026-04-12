@@ -9,7 +9,7 @@ from PyQt6.QtCore import Qt, QTimer, QRect, QRectF, QPropertyAnimation, QEasingC
 from PyQt6.QtGui import (QCursor, QPainter, QColor, QBrush, QPaintEvent, 
                          QLinearGradient, QRadialGradient, QConicalGradient, QAction, QPen, QPainterPath, QRegion)
 from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, 
-                             QLabel, QMenu, QPushButton, QGraphicsOpacityEffect, QGridLayout, QFrame)
+                             QLabel, QMenu, QPushButton, QGraphicsOpacityEffect, QGridLayout, QFrame, QProgressBar)
 import webbrowser
 
 from app_styles import get_stylesheet
@@ -63,12 +63,27 @@ class DynamicIsland(QWidget):
         self.charging_anim.setDuration(3000)
         self.charging_anim.setEasingCurve(QEasingCurve.Type.InOutSine)
         
-        self.weather_bg_opacity = 0.0
+        self._weather_bg_opacity = 0.0
         self.weather_bg_anim = QPropertyAnimation(self, b"weather_bg_opacity")
         self.weather_bg_anim.setDuration(1200)
         self.weather_bg_anim.setEasingCurve(QEasingCurve.Type.InOutSine)
         
         self.weather_bg_phase = 0.0
+        
+        self._perf_bg_opacity = 0.0
+        self.perf_bg_anim = QPropertyAnimation(self, b"perf_bg_opacity")
+        self.perf_bg_anim.setDuration(1200)
+        self.perf_bg_anim.setEasingCurve(QEasingCurve.Type.InOutSine)
+
+        self._calendar_bg_opacity = 0.0
+        self.calendar_bg_anim = QPropertyAnimation(self, b"calendar_bg_opacity")
+        self.calendar_bg_anim.setDuration(1200)
+        self.calendar_bg_anim.setEasingCurve(QEasingCurve.Type.InOutSine)
+
+        self._month_bg_opacity = 0.0
+        self.month_bg_anim = QPropertyAnimation(self, b"month_bg_opacity")
+        self.month_bg_anim.setDuration(1200)
+        self.month_bg_anim.setEasingCurve(QEasingCurve.Type.InOutSine)
 
         self.power_timer = QTimer(self)
         self.power_timer.timeout.connect(self.check_power_status)
@@ -77,6 +92,7 @@ class DynamicIsland(QWidget):
         # Dimensions Constants
         self.IDLE_W, self.IDLE_H = 180, 40
         self.EXP_W, self.EXP_H = 340, 100
+        self.PERF_W, self.PERF_H = 360, 180
         self.MUSIC_W, self.MUSIC_H = 420, 40
         self.NOTIFY_W, self.NOTIFY_H = 380, 40
         self.WEATHER_W, self.WEATHER_H = 360, 160
@@ -119,6 +135,21 @@ class DynamicIsland(QWidget):
     @weather_bg_opacity.setter
     def weather_bg_opacity(self, val): self._weather_bg_opacity = val; self.update()
 
+    @pyqtProperty(float)
+    def perf_bg_opacity(self): return self._perf_bg_opacity
+    @perf_bg_opacity.setter
+    def perf_bg_opacity(self, val): self._perf_bg_opacity = val; self.update()
+
+    @pyqtProperty(float)
+    def calendar_bg_opacity(self): return self._calendar_bg_opacity
+    @calendar_bg_opacity.setter
+    def calendar_bg_opacity(self, val): self._calendar_bg_opacity = val; self.update()
+
+    @pyqtProperty(float)
+    def month_bg_opacity(self): return self._month_bg_opacity
+    @month_bg_opacity.setter
+    def month_bg_opacity(self, val): self._month_bg_opacity = val; self.update()
+
     def get_current_radius(self):
         # Keeps pill shape for small heights, switches to rounded rect for taller panels
         return min(self._island_h / 2.0, 30.0)
@@ -158,9 +189,15 @@ class DynamicIsland(QWidget):
         # 3. Base Island
         painter.setBrush(QBrush(QColor(0, 0, 0))); painter.drawRoundedRect(rect, radius, radius)
 
-        # 4. Weather Animated Background (iOS style)
+        # 4. Weather/Perf Animated Background (iOS style)
         if self._weather_bg_opacity > 0.0:
             self.paint_weather_bg(painter, rect, radius)
+        if self._perf_bg_opacity > 0.0:
+            self.paint_perf_bg(painter, rect, radius)
+        if self._calendar_bg_opacity > 0.0:
+            self.paint_calendar_bg(painter, rect, radius)
+        if self._month_bg_opacity > 0.0:
+            self.paint_month_bg(painter, rect, radius)
             
         # --- START STRICT CLIPPING ---
         # Everything drawn after this point will be strictly contained within the rounded rect
@@ -251,7 +288,10 @@ class DynamicIsland(QWidget):
     def update_animation(self):
         self.gradient_phase = (self.gradient_phase + 0.005) % 1.0
         self.weather_bg_phase = (self.weather_bg_phase + 0.003) % 1.0
-        if self.current_state in ("Hover", "Notify") or self.media_state in ("Playing", "Paused") or self._weather_bg_opacity > 0.0: self.update()
+        if self.current_state in ("Hover", "Notify") or self.media_state in ("Playing", "Paused") or \
+           self._weather_bg_opacity > 0.0 or self._perf_bg_opacity > 0.0 or \
+           self._calendar_bg_opacity > 0.0 or self._month_bg_opacity > 0.0: 
+            self.update()
 
     def get_windows_accent_color(self):
         try:
@@ -299,13 +339,15 @@ class DynamicIsland(QWidget):
         self.header_layout.addStretch(); self.header_layout.addWidget(self.media_controls); self.header_layout.addWidget(self.perf_widget); self.media_controls.hide(); self.perf_widget.hide()
         
         # New Feature Panels
+        self.perf_panel = self.create_perf_panel()
         self.weather_panel = self.create_weather_panel()
         self.calendar_panel = self.create_calendar_panel()
         self.month_panel = self.create_month_panel()
         
-        for p in [self.weather_panel, self.calendar_panel, self.month_panel]: p.hide()
+        for p in [self.perf_panel, self.weather_panel, self.calendar_panel, self.month_panel]: p.hide()
         
         self.content_layout.addWidget(self.header_widget)
+        self.content_layout.addWidget(self.perf_panel)
         self.content_layout.addWidget(self.weather_panel)
         self.content_layout.addWidget(self.calendar_panel)
         self.content_layout.addWidget(self.month_panel)
@@ -328,34 +370,70 @@ class DynamicIsland(QWidget):
 
     def paint_charging_ears(self, painter, rect, radius):
         p = self.charging_phase
-        opacity = math.sin(p * math.pi) 
-        beam_width = 850 * opacity
-        h = rect.height()
-        centerY = rect.top() + h / 2; centerX = rect.center().x()
-        glow_grad = QRadialGradient(QPointF(centerX, centerY), beam_width / 1.5)
-        alpha_base = int(140 * opacity)
-        glow_grad.setColorAt(0.0, QColor(0, 160, 255, alpha_base))
-        glow_grad.setColorAt(0.6, QColor(0, 100, 220, alpha_base // 3))
-        glow_grad.setColorAt(1.0, QColor(0, 0, 0, 0))
+        if p <= 0: return
+        
+        opacity = math.sin(p * math.pi)
+        centerX = rect.center().x()
+        centerY = rect.top() + rect.height() / 2
+        
         painter.save()
-        painter.setOpacity(0.8)
-        painter.setBrush(glow_grad); painter.setPen(Qt.PenStyle.NoPen)
-        painter.translate(centerX, centerY); painter.scale(1.3, 0.4); painter.translate(-centerX, -centerY)
-        painter.drawEllipse(QPointF(centerX, centerY), beam_width / 1.8, beam_width / 1.8)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Screen)
+
+        # 1. Main Soft Glow Aura (Behind and around)
+        glow_path = QPainterPath()
+        glow_path.addRoundedRect(rect.adjusted(-20*opacity, -10*opacity, 20*opacity, 10*opacity), radius+10, radius+10)
+        
+        # Multi-layered soft glow
+        for i in range(5):
+            alpha = int(70 * opacity / (i + 1))
+            glow_grad = QRadialGradient(rect.center(), rect.width() / 1.5)
+            # Alternate Cyan and Deep Purple for vibrancy
+            color = QColor(0, 255, 255, alpha) if i % 2 == 0 else QColor(140, 0, 255, alpha)
+            painter.setPen(QPen(color, 12 + i*8, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+            painter.drawPath(glow_path)
+
+        # 2. Cinematic Laser Beams (Thicker and Glowing)
+        beam_len = 500 * opacity
+        left_edge = rect.left()
+        right_edge = rect.right()
+        
+        # Right Beam - Tapered Glow
+        for i in range(3):
+            beam_w = 4 - i
+            if beam_w <= 0: continue
+            alpha = int(180 * opacity / (i + 1))
+            r_beam_grad = QLinearGradient(right_edge, centerY, right_edge + beam_len, centerY)
+            r_beam_grad.setColorAt(0.0, QColor(255, 255, 255, alpha))
+            r_beam_grad.setColorAt(0.1, QColor(0, 240, 255, alpha))
+            r_beam_grad.setColorAt(0.5, QColor(160, 0, 255, alpha // 2))
+            r_beam_grad.setColorAt(1.0, QColor(0, 0, 0, 0))
+            
+            painter.setPen(QPen(QBrush(r_beam_grad), beam_w + 1, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawLine(QPointF(right_edge, centerY), QPointF(right_edge + beam_len, centerY))
+
+        # Left Beam - Tapered Glow
+        for i in range(3):
+            beam_w = 4 - i
+            if beam_w <= 0: continue
+            alpha = int(180 * opacity / (i + 1))
+            l_beam_grad = QLinearGradient(left_edge, centerY, left_edge - beam_len, centerY)
+            l_beam_grad.setColorAt(0.0, QColor(255, 255, 255, alpha))
+            l_beam_grad.setColorAt(0.1, QColor(0, 240, 255, alpha))
+            l_beam_grad.setColorAt(0.5, QColor(160, 0, 255, alpha // 2))
+            l_beam_grad.setColorAt(1.0, QColor(0, 0, 0, 0))
+            
+            painter.setPen(QPen(QBrush(l_beam_grad), beam_w + 1, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            painter.drawLine(QPointF(left_edge, centerY), QPointF(left_edge - beam_len, centerY))
+
+        # 3. Bright Core Impact points
+        painter.setBrush(QColor(255, 255, 255, int(255 * opacity)))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawEllipse(QPointF(right_edge, centerY), 4, 3)
+        painter.drawEllipse(QPointF(left_edge, centerY), 4, 3)
+        
         painter.restore()
-        grad = QLinearGradient(centerX - beam_width/2 - 40, centerY, centerX + beam_width/2 + 40, centerY)
-        grad.setColorAt(0.0, QColor(0, 0, 0, 0))
-        grad.setColorAt(0.3, QColor(0, 140, 255, int(150 * opacity)))
-        grad.setColorAt(0.5, QColor(255, 255, 255, int(250 * opacity)))
-        grad.setColorAt(0.7, QColor(0, 140, 255, int(150 * opacity)))
-        grad.setColorAt(1.0, QColor(0, 0, 0, 0))
-        painter.setBrush(grad); path = QPainterPath()
-        path.moveTo(centerX - beam_width/2, centerY)
-        path.lineTo(centerX, centerY - 1.1)
-        path.lineTo(centerX + beam_width/2, centerY)
-        path.lineTo(centerX, centerY + 1.1)
-        path.closeSubpath()
-        painter.drawPath(path)
 
     def check_power_status(self):
         try:
@@ -414,6 +492,69 @@ class DynamicIsland(QWidget):
             painter.setBrush(bloom); painter.drawRoundedRect(rect, radius, radius)
         painter.restore()
 
+    def paint_perf_bg(self, painter, rect, radius):
+        painter.save()
+        painter.setOpacity(self._perf_bg_opacity)
+        p = self.weather_bg_phase * 2 * math.pi # Use same phase for sync
+        
+        # Base deep forest green
+        grad = QLinearGradient(rect.topLeft(), rect.bottomLeft())
+        grad.setColorAt(0, QColor(0, 40, 20))
+        grad.setColorAt(1, QColor(0, 20, 10))
+        painter.setBrush(grad); painter.drawRoundedRect(rect, radius, radius)
+        
+        # Liquid Lime Blooms
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Screen)
+        for i, color in enumerate([QColor(50, 255, 50, 80), QColor(200, 255, 0, 60)]):
+            x = rect.center().x() + math.sin(p * 0.8 + i*1.5) * (rect.width() * 0.35)
+            y = rect.center().y() + math.cos(p * 0.5 + i) * (rect.height() * 0.25)
+            bloom = QRadialGradient(QPointF(x, y), rect.width() * 0.5)
+            bloom.setColorAt(0, color); bloom.setColorAt(1, Qt.GlobalColor.transparent)
+            painter.setBrush(bloom); painter.drawRoundedRect(rect, radius, radius)
+        painter.restore()
+
+    def paint_calendar_bg(self, painter, rect, radius):
+        painter.save()
+        painter.setOpacity(self._calendar_bg_opacity)
+        p = self.weather_bg_phase * 2 * math.pi
+        
+        # Base deep amber/brown
+        grad = QLinearGradient(rect.topLeft(), rect.bottomLeft())
+        grad.setColorAt(0, QColor(60, 40, 0))
+        grad.setColorAt(1, QColor(30, 20, 0))
+        painter.setBrush(grad); painter.drawRoundedRect(rect, radius, radius)
+        
+        # Liquid Amber/Yellow Blooms
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Screen)
+        for i, color in enumerate([QColor(255, 180, 0, 90), QColor(255, 255, 0, 60)]):
+            x = rect.center().x() + math.sin(p * 0.9 + i*2) * (rect.width() * 0.3)
+            y = rect.center().y() + math.cos(p * 0.6 + i) * (rect.height() * 0.2)
+            bloom = QRadialGradient(QPointF(x, y), rect.width() * 0.55)
+            bloom.setColorAt(0, color); bloom.setColorAt(1, Qt.GlobalColor.transparent)
+            painter.setBrush(bloom); painter.drawRoundedRect(rect, radius, radius)
+        painter.restore()
+
+    def paint_month_bg(self, painter, rect, radius):
+        painter.save()
+        painter.setOpacity(self._month_bg_opacity)
+        p = self.weather_bg_phase * 2 * math.pi
+        
+        # Base deep midnight purple
+        grad = QLinearGradient(rect.topLeft(), rect.bottomLeft())
+        grad.setColorAt(0, QColor(30, 0, 50))
+        grad.setColorAt(1, QColor(15, 0, 30))
+        painter.setBrush(grad); painter.drawRoundedRect(rect, radius, radius)
+        
+        # Liquid Purple/Magenta Blooms
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Screen)
+        for i, color in enumerate([QColor(180, 0, 255, 80), QColor(255, 0, 180, 60)]):
+            x = rect.center().x() + math.sin(p * 1.1 + i) * (rect.width() * 0.3)
+            y = rect.center().y() + math.cos(p * 0.8 + i*1.2) * (rect.height() * 0.2)
+            bloom = QRadialGradient(QPointF(x, y), rect.width() * 0.5)
+            bloom.setColorAt(0, color); bloom.setColorAt(1, Qt.GlobalColor.transparent)
+            painter.setBrush(bloom); painter.drawRoundedRect(rect, radius, radius)
+        painter.restore()
+
     def create_action_button(self, app_type):
         btn = QPushButton(icon=qta.icon('mdi.open-in-new', color='white'))
         btn.setObjectName("ActionButton")
@@ -455,6 +596,42 @@ class DynamicIsland(QWidget):
             row.addWidget(bar); row.addLayout(det); row.addStretch(); row.addWidget(tm); l.addLayout(row)
         return w
 
+    def create_perf_panel(self):
+        w = QWidget(); l = QVBoxLayout(w); l.setContentsMargins(15, 12, 15, 18); l.setSpacing(12)
+        header = QHBoxLayout(); title = QLabel("System Status"); title.setStyleSheet("font-weight: bold; font-size: 15px;")
+        header.addWidget(title); header.addStretch(); header.addWidget(self.create_action_button("month")) # Fallback
+        l.addLayout(header)
+
+        # Helper for rows
+        def add_item(layout, icon, label):
+            v = QVBoxLayout(); v.setSpacing(4)
+            h = QHBoxLayout(); ico = QLabel(); ico.setPixmap(qta.icon(icon, color="white").pixmap(14, 14))
+            txt = QLabel(label); txt.setStyleSheet("font-size: 11px; color: #888; font-weight: 600;")
+            h.addWidget(ico); h.addWidget(txt); h.addStretch()
+            val = QLabel("0%"); val.setStyleSheet("font-size: 13px; font-weight: 600;")
+            bar = QProgressBar(); bar.setFixedHeight(4); bar.setTextVisible(False); bar.setMaximum(100)
+            bar.setStyleSheet("QProgressBar { background-color: #222; border-radius: 2px; border: none; } QProgressBar::chunk { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #00FF80, stop:1 #80FF00); border-radius: 2px; }")
+            v.addLayout(h); v.addWidget(val); v.addWidget(bar)
+            layout.addLayout(v); return bar, val
+
+        r1 = QHBoxLayout(); r1.setSpacing(30)
+        self.cpu_bar_L = add_item(r1, "mdi.cpu-64-bit", "CPU")
+        self.ram_bar_L = add_item(r1, "mdi.memory", "RAM")
+        l.addLayout(r1)
+
+        r2 = QHBoxLayout(); r2.setSpacing(30)
+        self.disk_bar_L = add_item(r2, "mdi.harddisk", "STORAGE")
+        
+        nv = QVBoxLayout(); nv.setSpacing(4)
+        nh = QHBoxLayout(); nico = QLabel(); nico.setPixmap(qta.icon("mdi.web", color="white").pixmap(14, 14))
+        ntxt = QLabel("NETWORK"); ntxt.setStyleSheet("font-size: 11px; color: #888; font-weight: 600;")
+        nh.addWidget(nico); nh.addWidget(ntxt); nh.addStretch(); nv.addLayout(nh)
+        self.net_down_L = QLabel("↓ 0 KB/s"); self.net_up_L = QLabel("↑ 0 KB/s")
+        for lb in [self.net_down_L, self.net_up_L]: lb.setStyleSheet("font-size: 12px; font-weight: 600;")
+        nv.addWidget(self.net_down_L); nv.addWidget(self.net_up_L); r2.addLayout(nv)
+        l.addLayout(r2); return w
+        return w
+
     def create_month_panel(self):
         w = QWidget(); l = QVBoxLayout(w); l.setContentsMargins(10, 8, 10, 18); l.setSpacing(8)
         now = datetime.datetime.now(); days = (datetime.date(now.year, now.month + 1, 1) - datetime.date(now.year, now.month, 1)).days if now.month < 12 else 31
@@ -480,9 +657,25 @@ class DynamicIsland(QWidget):
                 self.status_icon.setPixmap(qta.icon('mdi.circle', color=self.accent_color).pixmap(18, 18))
         self.update()
 
-    def update_perf(self, cpu, ram):
-        self.cpu_label.setText(f"CPU: {int(cpu)}%")
-        self.ram_label.setText(f"RAM: {int(ram)}%")
+    def update_perf(self, data):
+        cpu, ram, disk = data["cpu"], data["ram"], data["disk"]
+        down, up = data["down"], data["up"]
+        
+        # Header (Small - used in Idle/Notify)
+        self.cpu_label.setText(f"CPU: {int(cpu)}%"); self.ram_label.setText(f"RAM: {int(ram)}%")
+        
+        # Large Panel Detailed Metrics
+        self.cpu_bar_L[0].setValue(int(cpu)); self.cpu_bar_L[1].setText(f"{int(cpu)}%")
+        self.ram_bar_L[0].setValue(int(ram)); self.ram_bar_L[1].setText(f"{int(ram)}%")
+        self.disk_bar_L[0].setValue(int(disk)); self.disk_bar_L[1].setText(f"{int(disk)}%")
+        
+        # Net speed formatting helper
+        def fmt(b):
+            if b < 1024: return f"{int(b)} B/s"
+            if b < 1024*1024: return f"{int(b/1024)} KB/s"
+            return f"{b/(1024*1024):.1f} MB/s"
+            
+        self.net_down_L.setText(f"↓ {fmt(down)}"); self.net_up_L.setText(f"↑ {fmt(up)}")
 
     def update_media(self, state, title, artist, accent_hex):
         self.media_state, self.media_title, self.media_artist = state, title, artist; self.album_accent_color = QColor(accent_hex)
@@ -491,16 +684,17 @@ class DynamicIsland(QWidget):
 
     def update_feature_view(self):
         if self.current_state == "Idle":
-            self.perf_widget.hide(); self.media_controls.hide(); self.weather_panel.hide(); self.calendar_panel.hide(); self.month_panel.hide()
+            self.perf_panel.hide(); self.perf_widget.hide(); self.media_controls.hide(); self.weather_panel.hide(); self.calendar_panel.hide(); self.month_panel.hide()
             self.header_widget.show(); self.update_content(); return
         if self.current_state == "Notify":
-            self.perf_widget.hide(); self.media_controls.hide(); self.weather_panel.hide(); self.calendar_panel.hide(); self.month_panel.hide(); self.header_widget.show()
+            self.perf_panel.hide(); self.perf_widget.hide(); self.media_controls.hide(); self.weather_panel.hide(); self.calendar_panel.hide(); self.month_panel.hide(); self.header_widget.show()
             self.status_icon.setPixmap(qta.icon('mdi.lightning-bolt' if "Lock" in self.event_title else 'mdi.email', color='white').pixmap(18, 18))
             dt = f"{self.event_title} - {self.event_text}"; self.status_text.setText(dt[:45] + "..." if len(dt) > 48 else dt)
             return
         feature = self.features[self.current_feature_index]
-        self.header_widget.show() if feature in ["perf", "media"] else self.header_widget.hide()
-        self.perf_widget.setVisible(feature == "perf"); self.media_controls.setVisible(feature == "media")
+        self.header_widget.show() if feature == "media" else self.header_widget.hide()
+        self.perf_panel.setVisible(feature == "perf")
+        self.media_controls.setVisible(feature == "media")
         self.weather_panel.setVisible(feature == "weather"); self.calendar_panel.setVisible(feature == "calendar"); self.month_panel.setVisible(feature == "month")
         if feature == "perf": self.status_text.setText("Performance Status"); self.status_icon.setPixmap(qta.icon('mdi.speedometer', color='white').pixmap(18, 18))
         elif feature == "media":
@@ -526,6 +720,7 @@ class DynamicIsland(QWidget):
         else:
             feature = self.features[self.current_feature_index]
             if feature == "media": w, h = self.MUSIC_W, self.MUSIC_H
+            elif feature == "perf": w, h = self.PERF_W, self.PERF_H
             elif feature == "weather": w, h = self.WEATHER_W, self.WEATHER_H
             elif feature == "calendar": w, h = self.CALENDAR_W, self.CALENDAR_H
             elif feature == "month": w, h = self.MONTH_W, self.MONTH_H
@@ -533,12 +728,17 @@ class DynamicIsland(QWidget):
         if not self.is_charging:
              self.shine_anim.stop(); self.shine_anim.setStartValue(0.0); self.shine_anim.setEndValue(1.0); self.shine_anim.start()
         
-        # Weather BG Cross-fade
-        is_weather = (self.current_state != "Idle" and self.features[self.current_feature_index] == "weather")
-        self.weather_bg_anim.stop()
-        self.weather_bg_anim.setStartValue(self._weather_bg_opacity)
-        self.weather_bg_anim.setEndValue(1.0 if is_weather else 0.0)
-        self.weather_bg_anim.start()
+        # BG Cross-fades (Multi-theme)
+        def set_bg_target(anim, current_val, target_val):
+            anim.stop(); anim.setStartValue(current_val); anim.setEndValue(target_val); anim.start()
+
+        is_hover = (self.current_state != "Idle" and self.current_state != "Notify")
+        feat = self.features[self.current_feature_index] if is_hover else None
+
+        set_bg_target(self.weather_bg_anim, self._weather_bg_opacity, 1.0 if feat == "weather" else 0.0)
+        set_bg_target(self.perf_bg_anim, self._perf_bg_opacity, 1.0 if feat == "perf" else 0.0)
+        set_bg_target(self.calendar_bg_anim, self._calendar_bg_opacity, 1.0 if feat == "calendar" else 0.0)
+        set_bg_target(self.month_bg_anim, self._month_bg_opacity, 1.0 if feat == "month" else 0.0)
 
         self.anim_group.stop()
         self.content_pos_anim.setStartValue(QPoint(15, 0))
