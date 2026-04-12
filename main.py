@@ -8,8 +8,8 @@ import qtawesome as qta
 from PyQt6.QtCore import Qt, QTimer, QRect, QRectF, QPropertyAnimation, QEasingCurve, QPoint, QParallelAnimationGroup, QPointF, pyqtProperty
 from PyQt6.QtGui import (QCursor, QPainter, QColor, QBrush, QPaintEvent, 
                          QLinearGradient, QRadialGradient, QConicalGradient, QAction, QPen, QPainterPath, QRegion)
-from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, 
-                             QLabel, QMenu, QPushButton, QGraphicsOpacityEffect, QGridLayout, QFrame, QProgressBar)
+import json
+import os
 import webbrowser
 
 from app_styles import get_stylesheet
@@ -17,6 +17,10 @@ from perf_monitor import PerfMonitor
 from media_monitor import MediaMonitor
 from event_monitor import KeyLockMonitor
 from notification_monitor import NotificationMonitor
+from weather_monitor import WeatherMonitor
+from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, 
+                             QLabel, QMenu, QPushButton, QGraphicsOpacityEffect, 
+                             QGridLayout, QFrame, QProgressBar, QInputDialog)
 
 # DWM Constants
 DWMWA_SYSTEMBACKDROP_TYPE = 38
@@ -112,6 +116,7 @@ class DynamicIsland(QWidget):
         self.event_title, self.event_text = "", ""
         self.revert_timer = QTimer(self); self.revert_timer.setSingleShot(True); self.revert_timer.timeout.connect(lambda: self.change_state("Idle"))
         
+        self.load_settings()
         self.setup_monitors()
         self.init_ui()
         self.setup_autostart()
@@ -149,6 +154,40 @@ class DynamicIsland(QWidget):
     def month_bg_opacity(self): return self._month_bg_opacity
     @month_bg_opacity.setter
     def month_bg_opacity(self, val): self._month_bg_opacity = val; self.update()
+
+    def load_settings(self):
+        self.config_path = os.path.join(os.path.dirname(__file__), "config.json")
+        if os.path.exists(self.config_path):
+            try:
+                with open(self.config_path, "r") as f:
+                    self.settings = json.load(f)
+            except:
+                self.settings = {"location": "Varanasi, India", "lat": 25.3333, "lon": 83.0}
+        else:
+            self.settings = {"location": "Varanasi, India", "lat": 25.3333, "lon": 83.0}
+        
+        if hasattr(self, 'weather_monitor'):
+            self.weather_monitor.city = self.settings.get("location", "Varanasi, India")
+            self.weather_monitor.lat = self.settings.get("lat", 25.3333)
+            self.weather_monitor.lon = self.settings.get("lon", 83.0)
+            self.weather_monitor.refresh()
+
+    def save_settings(self):
+        self.settings["location"] = self.weather_monitor.city
+        self.settings["lat"] = self.weather_monitor.lat
+        self.settings["lon"] = self.weather_monitor.lon
+        with open(self.config_path, "w") as f:
+            json.dump(self.settings, f, indent=4)
+
+    def change_location_dialog(self):
+        city, ok = QInputDialog.getText(self, "Change Location", "Enter City Name:", text=self.weather_monitor.city)
+        if ok and city:
+            success, msg = self.weather_monitor.set_location(city)
+            if success:
+                self.save_settings()
+                self.show_notification("Weather", "Location Updated", f"Now showing weather for {msg}")
+            else:
+                self.show_notification("Weather", "Error", f"Could not find location: {city}")
 
     def get_current_radius(self):
         # Keeps pill shape for small heights, switches to rounded rect for taller panels
@@ -360,6 +399,14 @@ class DynamicIsland(QWidget):
         self.media_monitor = MediaMonitor(self); self.media_monitor.media_updated.connect(self.update_media); self.media_monitor.start()
         self.key_monitor = KeyLockMonitor(self); self.key_monitor.lock_changed.connect(self.show_key_event); self.key_monitor.start()
         self.notif_monitor = NotificationMonitor(self); self.notif_monitor.notification_received.connect(self.show_notification); self.notif_monitor.start()
+        
+        # Weather monitor with loaded settings
+        loc = self.settings.get("location", "Varanasi, India")
+        lat = self.settings.get("lat", 25.3333)
+        lon = self.settings.get("lon", 83.0)
+        self.weather_monitor = WeatherMonitor(city=loc, lat=lat, lon=lon)
+        self.weather_monitor.weather_updated.connect(self.update_weather)
+        self.weather_monitor.start()
 
     def update_island_geometry(self, rect, radius):
         if not hasattr(self, 'island_root'): return
@@ -568,19 +615,35 @@ class DynamicIsland(QWidget):
 
     def create_weather_panel(self):
         w = QWidget(); l = QVBoxLayout(w); l.setContentsMargins(10, 10, 10, 15); l.setSpacing(12)
-        h1 = QHBoxLayout(); temp = QLabel("34°"); temp.setStyleSheet("font-size: 38px; font-weight: bold;")
-        info = QVBoxLayout(); city = QLabel("Varanasi, India"); city.setStyleSheet("font-size: 14px; font-weight: 600;")
-        cond = QLabel("Mostly Sunny"); cond.setStyleSheet("font-size: 11px; color: #AAA;")
-        info.addWidget(city); info.addWidget(cond); h1.addLayout(info); h1.addStretch(); h1.addWidget(temp)
+        h1 = QHBoxLayout(); self.weather_temp_label = QLabel("--°"); self.weather_temp_label.setStyleSheet("font-size: 38px; font-weight: bold;")
+        info = QVBoxLayout(); 
+        loc_name = self.settings.get("location", "Varanasi, India")
+        self.weather_city_label = QLabel(loc_name); self.weather_city_label.setStyleSheet("font-size: 14px; font-weight: 600;")
+        self.weather_cond_label = QLabel("Loading..."); self.weather_cond_label.setStyleSheet("font-size: 11px; color: #AAA;")
+        info.addWidget(self.weather_city_label); info.addWidget(self.weather_cond_label); h1.addLayout(info); h1.addStretch(); h1.addWidget(self.weather_temp_label)
         h1.addWidget(self.create_action_button("weather"))
         l.addLayout(h1)
-        h2 = QHBoxLayout(); h2.setSpacing(5)
-        for t, ic, tmp in [("2PM", "mdi.weather-sunny", "35°"), ("3PM", "mdi.weather-sunny", "35°"), ("4PM", "mdi.weather-sunny", "36°"), ("5PM", "mdi.weather-cloudy", "34°"), ("6PM", "mdi.weather-cloudy", "32°")]:
-            slot = QVBoxLayout(); slot.setSpacing(2); st = QLabel(t); st.setStyleSheet("font-size: 9px; color: #888;"); st.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            si = QLabel(); si.setPixmap(qta.icon(ic, color='white').pixmap(18, 18)); si.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            stp = QLabel(tmp); stp.setStyleSheet("font-size: 10px; font-weight: 600;"); stp.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            slot.addWidget(st); slot.addWidget(si); slot.addWidget(stp); h2.addLayout(slot)
-        l.addLayout(h2); return w
+        self.hourly_layout = QHBoxLayout(); self.hourly_layout.setSpacing(5)
+        # Placeholder slots
+        self.hourly_slots = []
+        for _ in range(5):
+            slot = QVBoxLayout(); slot.setSpacing(2); st = QLabel("--"); st.setStyleSheet("font-size: 9px; color: #888;"); st.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            si = QLabel(); si.setPixmap(qta.icon("mdi.weather-cloudy", color='white').pixmap(18, 18)); si.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            stp = QLabel("--°"); stp.setStyleSheet("font-size: 10px; font-weight: 600;"); stp.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            slot.addWidget(st); slot.addWidget(si); slot.addWidget(stp); self.hourly_layout.addLayout(slot)
+            self.hourly_slots.append((st, si, stp))
+        l.addLayout(self.hourly_layout); return w
+
+    def update_weather(self, data):
+        self.weather_temp_label.setText(data["temp"])
+        self.weather_city_label.setText(data["city"])
+        self.weather_cond_label.setText(data["desc"])
+        for i, slot in enumerate(data["hourly"]):
+            if i < len(self.hourly_slots):
+                st, si, stp = self.hourly_slots[i]
+                st.setText(slot["time"])
+                si.setPixmap(qta.icon(slot["icon"], color='white').pixmap(18, 18))
+                stp.setText(slot["temp"])
 
     def create_calendar_panel(self):
         w = QWidget(); l = QVBoxLayout(w); l.setContentsMargins(10, 8, 10, 15); l.setSpacing(10)
@@ -805,6 +868,11 @@ class DynamicIsland(QWidget):
         sm = menu.addMenu("Island Style")
         for s in ["Default", "Liquid Glass"]:
             a = sm.addAction(s); a.setCheckable(True); a.setChecked(self.island_style == s); a.triggered.connect(lambda _, st=s: setattr(self, 'island_style', st))
+        
+        menu.addSeparator()
+        loc_action = menu.addAction("Change Location")
+        loc_action.triggered.connect(self.change_location_dialog)
+        
         menu.addSeparator(); qa = menu.addAction("Quit"); qa.triggered.connect(QApplication.quit); menu.exec(self.mapToGlobal(event.pos()))
 
 if __name__ == "__main__":

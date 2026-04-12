@@ -121,9 +121,13 @@ class MediaMonitor(QThread):
                                 avg = image.resize((1, 1)).getpixel((0, 0))
                                 accent_color = '#{:02x}{:02x}{:02x}'.format(avg[0], avg[1], avg[2])
                         except Exception as thumb_e:
-                            print(f"Thumbnail error: {thumb_e}")
+                            if not ("remote procedure call failed" in str(thumb_e).lower() or "0x800706be" in str(thumb_e).lower()):
+                                print(f"Thumbnail error: {thumb_e}")
                 except Exception as props_e:
-                    print(f"Properties error: {props_e}")
+                    if not ("remote procedure call failed" in str(props_e).lower() or "0x800706be" in str(props_e).lower()):
+                        print(f"Properties error: {props_e}")
+                    else:
+                        self.current_session = None # Reset session on RPC failure
                     title, artist, accent_color = "Unknown Title", "", "#000000"
 
                 self.media_updated.emit(state_str, title, artist, accent_color)
@@ -132,7 +136,8 @@ class MediaMonitor(QThread):
         except Exception as e:
             if "remote procedure call failed" in str(e).lower() or "0x800706be" in str(e).lower():
                 self.current_session = None
-            print(f"Update media info error handled: {e}")
+            else:
+                print(f"Update media info error: {e}")
 
     # Control Methods
     def toggle_play_pause(self):
