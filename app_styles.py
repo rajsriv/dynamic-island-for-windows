@@ -71,4 +71,31 @@ def get_stylesheet(accent_color: str = "#0078D7") -> str:
     QPushButton#ActionButton:pressed {{
         background-color: rgba(255, 255, 255, 50);
     }}
+
+    QPushButton#ControlBall {{
+        background-color: #000000;
+        color: white;
+        border-radius: 20px;
+        border: 1.2px solid rgba(255, 255, 255, 40);
+        width: 40px;
+        height: 40px;
+        font-size: 20px;
+    }}
+
+    QPushButton#ControlBall:hover {{
+        background-color: rgba(40, 40, 40, 255);
+        border: 1.5px solid rgba(255, 255, 255, 80);
+    }}
+
+    QPushButton#NavButton {{
+        background-color: transparent;
+        color: #888;
+        border: none;
+        font-size: 16px;
+        padding: 0px 5px;
+    }}
+
+    QPushButton#NavButton:hover {{
+        color: white;
+    }}
     """

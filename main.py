@@ -7,10 +7,11 @@ import math
 import qtawesome as qta
 from PyQt6.QtCore import Qt, QTimer, QRect, QRectF, QPropertyAnimation, QEasingCurve, QPoint, QParallelAnimationGroup, QPointF, pyqtProperty
 from PyQt6.QtGui import (QCursor, QPainter, QColor, QBrush, QPaintEvent, 
-                         QLinearGradient, QRadialGradient, QConicalGradient, QAction, QPen, QPainterPath, QRegion)
+                         QLinearGradient, QRadialGradient, QConicalGradient, QAction, QPen, QPainterPath, QRegion, QPixmap)
 import json
 import os
 import webbrowser
+import subprocess
 
 from app_styles import get_stylesheet
 from perf_monitor import PerfMonitor
@@ -27,6 +28,74 @@ DWMWA_SYSTEMBACKDROP_TYPE = 38
 DWMWA_WINDOW_CORNER_PREFERENCE = 33
 DWMSBT_DISABLE = 1
 DWMWCP_ROUND = 2
+
+class ControlBall(QPushButton):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("ControlBall")
+        self.setFixedSize(40, 40)
+        self._ball_scale = 1.0
+        self.action_cmd = None
+        self.clicked.connect(self.execute_action)
+        self._opacity_effect = QGraphicsOpacityEffect(self)
+        self.setGraphicsEffect(self._opacity_effect)
+        self._opacity_effect.setOpacity(0.0)
+        
+    @pyqtProperty(float)
+    def ball_scale(self): return self._ball_scale
+    @ball_scale.setter
+    def ball_scale(self, val):
+        self._ball_scale = val
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        if self._ball_scale != 1.0:
+            painter.translate(self.width()/2, self.height()/2)
+            painter.scale(self._ball_scale, self._ball_scale)
+            painter.translate(-self.width()/2, -self.height()/2)
+        super().paintEvent(event)
+        
+    def execute_action(self):
+        if self.action_cmd:
+            if isinstance(self.action_cmd, str) and self.action_cmd.startswith("http"):
+                webbrowser.open(self.action_cmd)
+            else:
+                try: subprocess.Popen(self.action_cmd, shell=True)
+                except: pass
+
+    def animate_to(self, pos, opacity, scale=1.0, duration=600, delay=0):
+        if hasattr(self, "_current_anim"):
+            self._current_anim.stop()
+        
+        self._current_anim = QParallelAnimationGroup(self)
+        
+        # Position animation
+        p_anim = QPropertyAnimation(self, b"pos")
+        p_anim.setDuration(duration)
+        p_anim.setEasingCurve(QEasingCurve.Type.OutBack if opacity > 0 else QEasingCurve.Type.OutExpo)
+        p_anim.setEndValue(pos)
+        
+        # Opacity animation
+        o_anim = QPropertyAnimation(self._opacity_effect, b"opacity")
+        o_anim.setDuration(duration)
+        o_anim.setEndValue(opacity)
+
+        # Scale animation
+        s_anim = QPropertyAnimation(self, b"ball_scale")
+        s_anim.setDuration(duration)
+        s_anim.setEasingCurve(QEasingCurve.Type.OutBack)
+        s_anim.setEndValue(scale)
+        
+        self._current_anim.addAnimation(p_anim)
+        self._current_anim.addAnimation(o_anim)
+        self._current_anim.addAnimation(s_anim)
+        
+        if delay > 0:
+            QTimer.singleShot(delay, self._current_anim.start)
+        else:
+            self._current_anim.start()
 
 class DynamicIsland(QWidget):
     def __init__(self):
@@ -109,8 +178,23 @@ class DynamicIsland(QWidget):
         self.current_state = "Idle"
         self.media_state = "Idle"
         self.media_title, self.media_artist = "", ""
-        self.features = ["perf", "media", "weather", "calendar", "month"]
+        self.features = ["perf", "media", "weather", "calendar", "month", "basics"]
         self.current_feature_index = 0
+        
+        # Basics Wheel State
+        self.basic_controls_index = 0
+        self.basic_controls_items = [
+            {"name": "Shutdown", "icon": "mdi.power", "cmd": "shutdown /s /t 0"},
+            {"name": "Restart", "icon": "mdi.refresh", "cmd": "shutdown /r /t 0"},
+            {"name": "Sleep", "icon": "mdi.sleep", "cmd": "rundll32.exe powrprof.dll,SetSuspendState 0,1,0"},
+            {"name": "File Explorer", "icon": "mdi.folder-outline", "cmd": "explorer ."},
+            {"name": "Settings", "icon": "mdi.cog-outline", "cmd": "start ms-settings:"},
+            {"name": "Task Manager", "icon": "mdi.chart-bubble", "cmd": "taskmgr"},
+            {"name": "Chrome", "icon": "mdi.google-chrome", "cmd": "start chrome"},
+            {"name": "YouTube", "icon": "mdi.youtube", "cmd": "https://www.youtube.com"},
+            {"name": "CMD", "icon": "mdi.console", "cmd": "start cmd"}
+        ]
+        self.control_balls = []
         
         # Notification/Event queue
         self.event_title, self.event_text = "", ""
@@ -382,14 +466,24 @@ class DynamicIsland(QWidget):
         self.weather_panel = self.create_weather_panel()
         self.calendar_panel = self.create_calendar_panel()
         self.month_panel = self.create_month_panel()
+        self.basics_panel = self.create_basics_panel()
         
-        for p in [self.perf_panel, self.weather_panel, self.calendar_panel, self.month_panel]: p.hide()
+        for p in [self.perf_panel, self.weather_panel, self.calendar_panel, self.month_panel, self.basics_panel]: p.hide()
+        
+        # Instantiate 4 Control Balls for smooth carousel
+        for _ in range(4):
+            ball = ControlBall(self)
+            ball.hide()
+            # Initial off-screen position to prevent first-hover jump
+            ball.move(-100, -100)
+            self.control_balls.append(ball)
         
         self.content_layout.addWidget(self.header_widget)
         self.content_layout.addWidget(self.perf_panel)
         self.content_layout.addWidget(self.weather_panel)
         self.content_layout.addWidget(self.calendar_panel)
         self.content_layout.addWidget(self.month_panel)
+        self.content_layout.addWidget(self.basics_panel)
         
         self.island_root_layout.addWidget(self.content_container); self.update_content()
         self.update_island_geometry(self.get_island_rect(), self.get_current_radius())
@@ -707,6 +801,13 @@ class DynamicIsland(QWidget):
             dot.setStyleSheet(f"background-color: {color}; border-radius: 6px;"); grid.addWidget(dot, i//10, i%10)
         l.addLayout(grid); return w
 
+    def create_basics_panel(self):
+        w = QWidget(); l = QHBoxLayout(w); l.setContentsMargins(10, 0, 10, 0); l.setSpacing(10); l.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        btn_l = QPushButton("<", objectName="NavButton"); btn_r = QPushButton(">", objectName="NavButton")
+        btn_l.clicked.connect(lambda: self.scroll_controls(-1)); btn_r.clicked.connect(lambda: self.scroll_controls(1))
+        lbl = QLabel("Basics"); lbl.setStyleSheet("font-size: 15px; font-weight: 700; color: #BBB; letter-spacing: 1.2px;")
+        l.addWidget(btn_l); l.addWidget(lbl); l.addWidget(btn_r); return w
+
 
 
     def update_content(self):
@@ -747,10 +848,10 @@ class DynamicIsland(QWidget):
 
     def update_feature_view(self):
         if self.current_state == "Idle":
-            self.perf_panel.hide(); self.perf_widget.hide(); self.media_controls.hide(); self.weather_panel.hide(); self.calendar_panel.hide(); self.month_panel.hide()
+            self.perf_panel.hide(); self.perf_widget.hide(); self.media_controls.hide(); self.weather_panel.hide(); self.calendar_panel.hide(); self.month_panel.hide(); self.basics_panel.hide()
             self.header_widget.show(); self.update_content(); return
         if self.current_state == "Notify":
-            self.perf_panel.hide(); self.perf_widget.hide(); self.media_controls.hide(); self.weather_panel.hide(); self.calendar_panel.hide(); self.month_panel.hide(); self.header_widget.show()
+            self.perf_panel.hide(); self.perf_widget.hide(); self.media_controls.hide(); self.weather_panel.hide(); self.calendar_panel.hide(); self.month_panel.hide(); self.basics_panel.hide(); self.header_widget.show()
             self.status_icon.setPixmap(qta.icon('mdi.lightning-bolt' if "Lock" in self.event_title else 'mdi.email', color='white').pixmap(18, 18))
             dt = f"{self.event_title} - {self.event_text}"; self.status_text.setText(dt[:45] + "..." if len(dt) > 48 else dt)
             return
@@ -759,6 +860,7 @@ class DynamicIsland(QWidget):
         self.perf_panel.setVisible(feature == "perf")
         self.media_controls.setVisible(feature == "media")
         self.weather_panel.setVisible(feature == "weather"); self.calendar_panel.setVisible(feature == "calendar"); self.month_panel.setVisible(feature == "month")
+        self.basics_panel.setVisible(feature == "basics")
         if feature == "perf": self.status_text.setText("Performance Status"); self.status_icon.setPixmap(qta.icon('mdi.speedometer', color='white').pixmap(18, 18))
         elif feature == "media":
             if self.media_state in ("Playing", "Paused"):
@@ -772,6 +874,92 @@ class DynamicIsland(QWidget):
             self.current_feature_index = (self.current_feature_index + (1 if delta < 0 else -1)) % len(self.features)
             self.execute_liquid_transition()
         super().wheelEvent(event)
+
+    def keyPressEvent(self, event):
+        # Arrow navigation removed per user request, using on-screen buttons instead
+        super().keyPressEvent(event)
+
+    def scroll_controls(self, delta):
+        n = len(self.basic_controls_items)
+        prev_idx = self.basic_controls_index
+        self.basic_controls_index = (self.basic_controls_index + delta) % n
+        
+        # Perform carousel animation
+        self.animate_control_balls(True)
+        
+    def refresh_control_balls(self):
+        # This is now handled by animate_control_balls for smooth rotation
+        pass
+
+    def animate_control_balls(self, show):
+        # Basics always uses IDLE_W geometry for its arc calculation
+        # We use window-local coordinates (relative to self.width()) to match paintEvent
+        pill_x = (self.width() - self.IDLE_W) // 2
+        rect = QRect(pill_x, 20, self.IDLE_W, self.IDLE_H)
+        cx = rect.right() - 22 # Base X reference
+        cy = rect.center().y()
+        
+        # New Arc: Right -> Bottom-Right -> Bottom
+        targets = [
+            QPoint(int(cx + 35), int(cy - 60)), # 0: Hidden (above right)
+            QPoint(int(cx + 42), int(cy - 24)), # 1: Right
+            QPoint(int(cx + 25), int(cy + 22)), # 2: Bottom-Right
+            QPoint(int(cx - 18), int(cy + 44)), # 3: Bottom (Fine-tuned spacing)
+            QPoint(int(cx - 58), int(cy + 44))  # 4: Hidden (Consistent spacing)
+        ]
+        
+        n_items = len(self.basic_controls_items)
+        
+        # Calculate which 3 items + 1 upcoming item to show
+        # Visible are items at (basic_controls_index - 1, basic_controls_index, basic_controls_index + 1)
+        indices = [
+            (self.basic_controls_index - 2) % n_items,
+            (self.basic_controls_index - 1) % n_items,
+            self.basic_controls_index,
+            (self.basic_controls_index + 1) % n_items,
+            (self.basic_controls_index + 2) % n_items
+        ]
+
+        # Use 4/5 balls to animate Between 5 logical positions
+        # For simplicity, we'll assign items to balls and animate them
+        for i, ball in enumerate(self.control_balls):
+            if not show:
+                # Fade out and move in
+                group = QParallelAnimationGroup(self)
+                pos_anim = QPropertyAnimation(ball, b"pos"); pos_anim.setDuration(400); pos_anim.setEasingCurve(QEasingCurve.Type.InQuad)
+                # Sink into the bottom-right corner instead of just center
+                pos_anim.setEndValue(QPoint(int(rect.right() - 20), int(rect.bottom() - 20)))
+                opa_anim = QPropertyAnimation(ball.graphicsEffect(), b"opacity"); opa_anim.setDuration(400)
+                opa_anim.setEndValue(0.0)
+                # Scale down during hide
+                s_anim = QPropertyAnimation(ball, b"ball_scale"); s_anim.setDuration(400); s_anim.setEndValue(0.7)
+                group.addAnimation(pos_anim); group.addAnimation(opa_anim); group.addAnimation(s_anim)
+                group.finished.connect(ball.hide); group.start()
+                continue
+
+            # SHOW LOGIC
+            if show:
+                if ball.isHidden() or ball.graphicsEffect().opacity() < 0.1:
+                    # Ensure it starts from behind the pill edge to prevent 'throwing from far'
+                    ball.move(QPoint(int(rect.right() - 20), int(rect.bottom() - 20)))
+                ball.show()
+                
+            item_idx = (self.basic_controls_index + (i - 1)) % n_items
+            item = self.basic_controls_items[item_idx]
+            
+            ball.setIcon(qta.icon(item["icon"], color='white'))
+            ball.action_cmd = item["cmd"]
+            
+            target = targets[i+1] # Map ball i to target i+1 (1, 2, 3, 4)
+            opacity = 1.0 if (i >= 0 and i <= 2) else 0.0
+            
+            # Focal ball (the one at index) scales up
+            # i=1 corresponds to the item at self.basic_controls_index
+            scale = 1.15 if i == 1 else 1.0
+            
+            # iOS Stagger effect: delay each ball's motion slightly
+            delay = i * 45 
+            ball.animate_to(target, opacity, scale=scale, delay=delay)
 
     def get_centered_x(self, width):
         sr = self.screen().availableGeometry(); return sr.x() + (sr.width() // 2) - (width // 2)
@@ -787,6 +975,7 @@ class DynamicIsland(QWidget):
             elif feature == "weather": w, h = self.WEATHER_W, self.WEATHER_H
             elif feature == "calendar": w, h = self.CALENDAR_W, self.CALENDAR_H
             elif feature == "month": w, h = self.MONTH_W, self.MONTH_H
+            elif feature == "basics": w, h = self.IDLE_W, self.IDLE_H # Keep default size
             else: w, h = self.EXP_W, self.EXP_H
         if not self.is_charging:
              self.shine_anim.stop(); self.shine_anim.setStartValue(0.0); self.shine_anim.setEndValue(1.0); self.shine_anim.start()
@@ -798,6 +987,9 @@ class DynamicIsland(QWidget):
         is_hover = (self.current_state != "Idle" and self.current_state != "Notify")
         feat = self.features[self.current_feature_index] if is_hover else None
 
+        # Basic Controls Balls Animation
+        self.animate_control_balls(feat == "basics")
+        
         set_bg_target(self.weather_bg_anim, self._weather_bg_opacity, 1.0 if feat == "weather" else 0.0)
         set_bg_target(self.perf_bg_anim, self._perf_bg_opacity, 1.0 if feat == "perf" else 0.0)
         set_bg_target(self.calendar_bg_anim, self._calendar_bg_opacity, 1.0 if feat == "calendar" else 0.0)
@@ -842,7 +1034,9 @@ class DynamicIsland(QWidget):
         global_bottom_right = self.mapToGlobal(QPoint(int(rect.right()), int(rect.bottom())))
         global_rect = QRect(global_top_left, global_bottom_right)
         
-        hit_rect = global_rect.adjusted(-15, -10, 15, 15)  # Generous hit zone
+        # Expanded right and bottom margin to include the popped-out buttons
+        # 80px right and 50px bottom ensures the user can hover the menu balls
+        hit_rect = global_rect.adjusted(-15, -10, 80, 50)  
         hwnd = int(self.winId())
         ex = ctypes.windll.user32.GetWindowLongW(hwnd, -20)
         WS_EX_TRANSPARENT = 0x20
