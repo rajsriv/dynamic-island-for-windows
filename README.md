@@ -1,3 +1,5 @@
+![Dynamic Island for Windows Banner](src/Dynamic%20Island%200.jpg)
+
 # Dynamic Island for Windows
 
 A sleek, fluid, and highly customizable Dynamic Island for Windows built with Python and PyQt6.
