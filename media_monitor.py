@@ -22,6 +22,8 @@ class MediaMonitor(QThread):
         self.last_lyric_sent = ""
         self.current_title = ""
         self.current_artist = ""
+        self.last_state = ""
+        self._tokens = [] # Store event tokens if needed, but SDK usually handles it via remove_
 
     def run(self):
         self.loop = asyncio.new_event_loop()
@@ -76,10 +78,21 @@ class MediaMonitor(QThread):
 
     def subscribe_to_current_session(self):
         try:
-            self.current_session = self.manager.get_current_session()
+            new_session = self.manager.get_current_session()
+            
+            # Check if this is actually a different session object
+            if self.current_session and new_session:
+                # Comparison of WinSDK objects can be tricky, but usually the source_app_user_model_id works
+                if self.current_session.source_app_user_model_id == new_session.source_app_user_model_id:
+                    return
+
+            self.current_session = new_session
             if self.current_session:
                 self.current_session.add_media_properties_changed(self.on_properties_changed)
                 self.current_session.add_playback_info_changed(self.on_playback_changed)
+                # Also listen to timeline changes for better responsiveness
+                try: self.current_session.add_timeline_properties_changed(self.on_playback_changed)
+                except: pass
         except Exception as e:
             print(f"Error subscribing to media session: {e}")
             self.current_session = None
@@ -109,12 +122,13 @@ class MediaMonitor(QThread):
             try:
                 info = self.current_session.get_playback_info()
             except Exception as e:
-                if "remote procedure call failed" in str(e).lower() or "0x800706be" in str(e).lower():
-                    self.current_session = None # Reset session on RPC failure
+                # If we can't even get playback info, the session is likely dead
+                self.current_session = None
                 self.media_updated.emit("Idle", "", "", "#000000")
                 return
 
             if not info:
+                self.current_session = None
                 self.media_updated.emit("Idle", "", "", "#000000")
                 return
 
@@ -130,38 +144,37 @@ class MediaMonitor(QThread):
                 try:
                     props = await self.current_session.try_get_media_properties_async()
                     if not props:
-                        self.media_updated.emit(state_str, "Unknown Title", "", "#000000")
-                        return
-                    
-                    title = props.title if props.title else "Unknown Title"
-                    artist = props.artist if props.artist else ""
-                    
-                    accent_color = "#000000"
-                    if props.thumbnail:
-                        try:
-                            thumb_stream = await props.thumbnail.open_read_async()
-                            reader = DataReader(thumb_stream.get_input_stream_at(0))
-                            await reader.load_async(thumb_stream.size)
-                            buffer = reader.read_buffer(thumb_stream.size)
-                            
-                            image_data = bytes(buffer)
-                            image = Image.open(io.BytesIO(image_data))
-                            image = image.resize((32, 32)) # Downsample to speed up
-                            
-                            # Get dominant color excluding too dark/bright colors
-                            colors = image.getcolors(32 * 32)
-                            # Filter out blacks and whites
-                            filtered = [c for c in colors if sum(c[1][:3]) > 50 and sum(c[1][:3]) < 700]
-                            if filtered:
-                                dominant = max(filtered, key=lambda x: x[0])[1]
-                                accent_color = '#{:02x}{:02x}{:02x}'.format(dominant[0], dominant[1], dominant[2])
-                            else:
-                                # Fallback to average
-                                avg = image.resize((1, 1)).getpixel((0, 0))
-                                accent_color = '#{:02x}{:02x}{:02x}'.format(avg[0], avg[1], avg[2])
-                        except Exception as thumb_e:
-                            if not ("remote procedure call failed" in str(thumb_e).lower() or "0x800706be" in str(thumb_e).lower()):
-                                print(f"Thumbnail error: {thumb_e}")
+                        title, artist, accent_color = "Unknown Title", "", "#000000"
+                    else:
+                        title = props.title if props.title else "Unknown Title"
+                        artist = props.artist if props.artist else ""
+                        
+                        accent_color = "#000000"
+                        if props.thumbnail:
+                            try:
+                                thumb_stream = await props.thumbnail.open_read_async()
+                                reader = DataReader(thumb_stream.get_input_stream_at(0))
+                                await reader.load_async(thumb_stream.size)
+                                buffer = reader.read_buffer(thumb_stream.size)
+                                
+                                image_data = bytes(buffer)
+                                image = Image.open(io.BytesIO(image_data))
+                                image = image.resize((32, 32)) # Downsample to speed up
+                                
+                                # Get dominant color excluding too dark/bright colors
+                                colors = image.getcolors(32 * 32)
+                                # Filter out blacks and whites
+                                filtered = [c for c in colors if sum(c[1][:3]) > 50 and sum(c[1][:3]) < 700]
+                                if filtered:
+                                    dominant = max(filtered, key=lambda x: x[0])[1]
+                                    accent_color = '#{:02x}{:02x}{:02x}'.format(dominant[0], dominant[1], dominant[2])
+                                else:
+                                    # Fallback to average
+                                    avg = image.resize((1, 1)).getpixel((0, 0))
+                                    accent_color = '#{:02x}{:02x}{:02x}'.format(avg[0], avg[1], avg[2])
+                            except Exception as thumb_e:
+                                if not ("remote procedure call failed" in str(thumb_e).lower() or "0x800706be" in str(thumb_e).lower()):
+                                    print(f"Thumbnail error: {thumb_e}")
                 except Exception as props_e:
                     if not ("remote procedure call failed" in str(props_e).lower() or "0x800706be" in str(props_e).lower()):
                         print(f"Properties error: {props_e}")
@@ -169,20 +182,23 @@ class MediaMonitor(QThread):
                         self.current_session = None # Reset session on RPC failure
                     title, artist, accent_color = "Unknown Title", "", "#000000"
 
-                if title != self.current_title or artist != self.current_artist:
+                if (state_str != self.last_state or title != self.current_title or artist != self.current_artist):
                     self.current_title = title
                     self.current_artist = artist
+                    self.last_state = state_str
                     self.lyrics = []
                     self.last_lyric_sent = ""
                     self.lyrics_updated.emit("") # Clear lyrics
-                    asyncio.create_task(self.fetch_lyrics(artist, title))
-
-                self.media_updated.emit(state_str, title, artist, accent_color)
+                    if title != "Unknown Title" and title != "":
+                        asyncio.create_task(self.fetch_lyrics(artist, title))
+                    self.media_updated.emit(state_str, title, artist, accent_color)
             else:
-                self.current_title = ""
-                self.current_artist = ""
-                self.lyrics = []
-                self.media_updated.emit("Idle", "", "", "#000000")
+                if self.last_state != "Idle":
+                    self.current_title = ""
+                    self.current_artist = ""
+                    self.last_state = "Idle"
+                    self.lyrics = []
+                    self.media_updated.emit("Idle", "", "", "#000000")
         except Exception as e:
             if "remote procedure call failed" in str(e).lower() or "0x800706be" in str(e).lower():
                 self.current_session = None
