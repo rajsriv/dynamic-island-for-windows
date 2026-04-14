@@ -246,7 +246,13 @@ class DynamicIsland(QWidget):
     def month_bg_opacity(self, val): self._month_bg_opacity = val; self.update()
 
     def load_settings(self):
-        self.config_path = os.path.join(os.path.dirname(__file__), "config.json")
+        if getattr(sys, 'frozen', False):
+            base_path = os.path.dirname(sys.executable)
+        else:
+            base_path = os.path.dirname(os.path.abspath(__file__))
+            
+        self.config_path = os.path.join(base_path, "config.json")
+        
         if os.path.exists(self.config_path):
             try:
                 with open(self.config_path, "r") as f:
