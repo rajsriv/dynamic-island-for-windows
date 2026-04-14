@@ -1,4 +1,6 @@
 import asyncio
+import re
+import requests
 import io
 from PyQt6.QtCore import QThread, pyqtSignal
 from winsdk.windows.media.control import GlobalSystemMediaTransportControlsSessionManager, GlobalSystemMediaTransportControlsSessionPlaybackStatus
@@ -7,6 +9,7 @@ from PIL import Image
 
 class MediaMonitor(QThread):
     media_updated = pyqtSignal(str, str, str, str) # state, title, artist, accent_color
+    lyrics_updated = pyqtSignal(str) # current lyric line
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -14,6 +17,10 @@ class MediaMonitor(QThread):
         self.loop = None
         self.manager = None
         self.current_session = None
+        self.lyrics = [] # List of (timestamp_sec, text)
+        self.last_lyric_sent = ""
+        self.current_title = ""
+        self.current_artist = ""
 
     def run(self):
         self.loop = asyncio.new_event_loop()
@@ -33,7 +40,35 @@ class MediaMonitor(QThread):
         self.subscribe_to_current_session()
 
         while self._is_running:
-            await asyncio.sleep(0.5)
+            await self.check_lyric_sync()
+            await asyncio.sleep(0.05) # 20fps check for ultra-smooth sync
+
+    async def check_lyric_sync(self):
+        if not self.current_session or not self.lyrics:
+            return
+        
+        try:
+            timeline = self.current_session.get_timeline_properties()
+            if not timeline:
+                return
+            
+            # Position is a datetime.timedelta
+            # Increase offset to 0.8s to fix consistent 'lateness' reported by user
+            pos_sec = timeline.position.total_seconds() + 0.8
+            
+            # Find the current line
+            current_line = ""
+            for ts, text in self.lyrics:
+                if pos_sec >= ts:
+                    current_line = text
+                else:
+                    break
+            
+            if current_line != self.last_lyric_sent:
+                self.last_lyric_sent = current_line
+                self.lyrics_updated.emit(current_line)
+        except:
+            pass
 
     def subscribe_to_current_session(self):
         try:
@@ -130,14 +165,63 @@ class MediaMonitor(QThread):
                         self.current_session = None # Reset session on RPC failure
                     title, artist, accent_color = "Unknown Title", "", "#000000"
 
+                if title != self.current_title or artist != self.current_artist:
+                    self.current_title = title
+                    self.current_artist = artist
+                    self.lyrics = []
+                    self.last_lyric_sent = ""
+                    self.lyrics_updated.emit("") # Clear lyrics
+                    asyncio.create_task(self.fetch_lyrics(artist, title))
+
                 self.media_updated.emit(state_str, title, artist, accent_color)
             else:
+                self.current_title = ""
+                self.current_artist = ""
+                self.lyrics = []
                 self.media_updated.emit("Idle", "", "", "#000000")
         except Exception as e:
             if "remote procedure call failed" in str(e).lower() or "0x800706be" in str(e).lower():
                 self.current_session = None
             else:
                 print(f"Update media info error: {e}")
+
+    async def fetch_lyrics(self, artist, title):
+        if not artist or not title:
+            return
+            
+        def do_fetch():
+            try:
+                url = "https://lrclib.net/api/get"
+                params = {"artist_name": artist, "track_name": title}
+                resp = requests.get(url, params=params, timeout=5)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    lrc = data.get("syncedLyrics")
+                    if lrc:
+                        return self.parse_lrc(lrc)
+                    elif data.get("plainLyrics"):
+                        # Fallback to plain lyrics as a single line (not ideal for sync)
+                        return [(0, data.get("plainLyrics").split('\n')[0])]
+                return []
+            except Exception as e:
+                print(f"Lyric fetch error: {e}")
+                return []
+
+        lyrics = await asyncio.get_event_loop().run_in_executor(None, do_fetch)
+        if lyrics:
+            self.lyrics = lyrics
+            await self.check_lyric_sync()
+
+    def parse_lrc(self, lrc_text):
+        lyrics = []
+        for line in lrc_text.splitlines():
+            # Match formats like [00:12.34] or [00:12]
+            match = re.search(r'\[(\d+):(\d+(?:\.\d+)?)\](.*)', line)
+            if match:
+                m, s, text = match.groups()
+                timestamp = int(m) * 60 + float(s)
+                lyrics.append((timestamp, text.strip()))
+        return sorted(lyrics, key=lambda x: x[0])
 
     # Control Methods
     def toggle_play_pause(self):

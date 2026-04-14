@@ -180,6 +180,9 @@ class DynamicIsland(QWidget):
         self.media_title, self.media_artist = "", ""
         self.features = ["perf", "media", "weather", "calendar", "month", "basics"]
         self.current_feature_index = 0
+        self.showing_lyrics = False
+        self.media_lyric_text = ""
+        self.LYRIC_W = 640
         
         # Basics Wheel State
         self.basic_controls_index = 0
@@ -491,6 +494,7 @@ class DynamicIsland(QWidget):
     def setup_monitors(self):
         self.perf_monitor = PerfMonitor(parent=self); self.perf_monitor.metrics_updated.connect(self.update_perf); self.perf_monitor.start()
         self.media_monitor = MediaMonitor(self); self.media_monitor.media_updated.connect(self.update_media); self.media_monitor.start()
+        self.media_monitor.lyrics_updated.connect(self.update_lyrics)
         self.key_monitor = KeyLockMonitor(self); self.key_monitor.lock_changed.connect(self.show_key_event); self.key_monitor.start()
         self.notif_monitor = NotificationMonitor(self); self.notif_monitor.notification_received.connect(self.show_notification); self.notif_monitor.start()
         
@@ -814,7 +818,10 @@ class DynamicIsland(QWidget):
         if self.current_state == "Idle":
             feature = self.features[self.current_feature_index]
             if feature == "media" and self.media_state in ("Playing", "Paused"):
-                dt = self.media_title; self.status_text.setText(dt[:22] + "..." if len(dt) > 25 else dt)
+                if self.showing_lyrics and self.media_lyric_text:
+                    self.status_text.setText(self.media_lyric_text)
+                else:
+                    dt = self.media_title; self.status_text.setText(dt[:22] + "..." if len(dt) > 25 else dt)
                 self.status_icon.setPixmap(qta.icon('mdi.music', color='white').pixmap(18, 18))
             else:
                 now = datetime.datetime.now(); ts = now.strftime("%I:%M %p").lstrip("0"); self.status_text.setText(f"{now.strftime('%a')}, {ts}")
@@ -843,8 +850,22 @@ class DynamicIsland(QWidget):
 
     def update_media(self, state, title, artist, accent_hex):
         self.media_state, self.media_title, self.media_artist = state, title, artist; self.album_accent_color = QColor(accent_hex)
+        if state == "Idle":
+            self.showing_lyrics = False
+            self.media_lyric_text = ""
         self.btn_play.setIcon(qta.icon('mdi.pause' if state == "Playing" else 'mdi.play', color='white')); self.update_content()
         if self.current_state == "Hover": self.update_feature_view()
+
+    def update_lyrics(self, text):
+        was_showing = self.showing_lyrics
+        self.media_lyric_text = text
+        self.showing_lyrics = bool(text)
+        
+        # If we start or stop showing lyrics, trigger a transition to update width
+        if was_showing != self.showing_lyrics:
+            self.execute_liquid_transition()
+        else:
+            self.update_content()
 
     def update_feature_view(self):
         if self.current_state == "Idle":
@@ -864,7 +885,10 @@ class DynamicIsland(QWidget):
         if feature == "perf": self.status_text.setText("Performance Status"); self.status_icon.setPixmap(qta.icon('mdi.speedometer', color='white').pixmap(18, 18))
         elif feature == "media":
             if self.media_state in ("Playing", "Paused"):
-                dt = f"{self.media_title} - {self.media_artist}"; self.status_text.setText(dt[:37] + "..." if len(dt) > 40 else dt)
+                if self.showing_lyrics and self.media_lyric_text:
+                    self.status_text.setText(self.media_lyric_text)
+                else:
+                    dt = f"{self.media_title} - {self.media_artist}"; self.status_text.setText(dt[:37] + "..." if len(dt) > 40 else dt)
             else: self.status_text.setText("Music Player")
             self.status_icon.setPixmap(qta.icon('mdi.music', color='white').pixmap(18, 18))
 
@@ -966,11 +990,15 @@ class DynamicIsland(QWidget):
 
     def execute_liquid_transition(self):
         if self.is_charging: w, h = 850, 40
-        elif self.current_state == "Idle": w, h = self.IDLE_W, self.IDLE_H
+        elif self.current_state == "Idle": 
+            if self.features[self.current_feature_index] == "media" and self.showing_lyrics:
+                w, h = self.LYRIC_W, self.IDLE_H
+            else:
+                w, h = self.IDLE_W, self.IDLE_H
         elif self.current_state == "Notify": w, h = self.NOTIFY_W, self.NOTIFY_H
         else:
             feature = self.features[self.current_feature_index]
-            if feature == "media": w, h = self.MUSIC_W, self.MUSIC_H
+            if feature == "media": w, h = (self.LYRIC_W, self.MUSIC_H) if self.showing_lyrics else (self.MUSIC_W, self.MUSIC_H)
             elif feature == "perf": w, h = self.PERF_W, self.PERF_H
             elif feature == "weather": w, h = self.WEATHER_W, self.WEATHER_H
             elif feature == "calendar": w, h = self.CALENDAR_W, self.CALENDAR_H
