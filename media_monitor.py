@@ -9,8 +9,8 @@ from winsdk.windows.storage.streams import DataReader, Buffer
 from PIL import Image
 
 class MediaMonitor(QThread):
-    media_updated = pyqtSignal(str, str, str, str) # state, title, artist, accent_color
-    lyrics_updated = pyqtSignal(str) # current lyric line
+    media_updated = pyqtSignal(str, str, str, str)                                     
+    lyrics_updated = pyqtSignal(str)                     
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -18,12 +18,12 @@ class MediaMonitor(QThread):
         self.loop = None
         self.manager = None
         self.current_session = None
-        self.lyrics = [] # List of (timestamp_sec, text)
+        self.lyrics = []                                
         self.last_lyric_sent = ""
         self.current_title = ""
         self.current_artist = ""
         self.last_state = ""
-        self._tokens = [] # Store event tokens if needed, but SDK usually handles it via remove_
+        self._tokens = []                                                                       
 
     def run(self):
         self.loop = asyncio.new_event_loop()
@@ -44,25 +44,34 @@ class MediaMonitor(QThread):
 
         while self._is_running:
             await self.check_lyric_sync()
-            await asyncio.sleep(0.02) # 50fps precision sync
+            await asyncio.sleep(0.02)                       
 
     async def check_lyric_sync(self):
         if not self.current_session or not self.lyrics:
             return
         
         try:
-            timeline = self.current_session.get_timeline_properties()
+                                                    
+            timeline = await self.loop.run_in_executor(None, self.get_safe_timeline)
             if not timeline:
                 return
             
-            # Audio Timeline Interpolation
+                                          
             now = datetime.datetime.now(datetime.timezone.utc)
-            delta = (now - timeline.last_updated_time).total_seconds()
             
-            # Base position + interpolation delta + user-requested 1.0s lead
-            pos_sec = timeline.position.total_seconds() + delta + 1.0
+                                           
+            try:
+                last_updated = timeline.last_updated_time
+                pos_base = timeline.position.total_seconds()
+            except:
+                return
+
+            delta = (now - last_updated).total_seconds()
             
-            # Find the current line
+                                                                            
+            pos_sec = pos_base + delta + 1.0
+            
+                                   
             current_line = ""
             for ts, text in self.lyrics:
                 if pos_sec >= ts:
@@ -76,13 +85,21 @@ class MediaMonitor(QThread):
         except:
             pass
 
+    def get_safe_timeline(self):
+        try:
+            if self.current_session:
+                return self.current_session.get_timeline_properties()
+        except:
+            pass
+        return None
+
     def subscribe_to_current_session(self):
         try:
             new_session = self.manager.get_current_session()
             
-            # Check if this is actually a different session object
+                                                                  
             if self.current_session and new_session:
-                # Comparison of WinSDK objects can be tricky, but usually the source_app_user_model_id works
+                                                                                                            
                 if self.current_session.source_app_user_model_id == new_session.source_app_user_model_id:
                     return
 
@@ -90,7 +107,7 @@ class MediaMonitor(QThread):
             if self.current_session:
                 self.current_session.add_media_properties_changed(self.on_properties_changed)
                 self.current_session.add_playback_info_changed(self.on_playback_changed)
-                # Also listen to timeline changes for better responsiveness
+                                                                           
                 try: self.current_session.add_timeline_properties_changed(self.on_playback_changed)
                 except: pass
         except Exception as e:
@@ -113,16 +130,17 @@ class MediaMonitor(QThread):
     async def update_media_info(self):
         try:
             if not self.current_session:
-                # Try re-subscribing in case session just became available
+                                                                          
                 self.subscribe_to_current_session()
                 if not self.current_session:
                     self.media_updated.emit("Idle", "", "", "#000000")
                     return
 
             try:
-                info = self.current_session.get_playback_info()
+                                                     
+                info = await self.loop.run_in_executor(None, self.get_safe_playback_info)
             except Exception as e:
-                # If we can't even get playback info, the session is likely dead
+                                                                                
                 self.current_session = None
                 self.media_updated.emit("Idle", "", "", "#000000")
                 return
@@ -159,17 +177,17 @@ class MediaMonitor(QThread):
                                 
                                 image_data = bytes(buffer)
                                 image = Image.open(io.BytesIO(image_data))
-                                image = image.resize((32, 32)) # Downsample to speed up
+                                image = image.resize((32, 32))                         
                                 
-                                # Get dominant color excluding too dark/bright colors
+                                                                                     
                                 colors = image.getcolors(32 * 32)
-                                # Filter out blacks and whites
+                                                              
                                 filtered = [c for c in colors if sum(c[1][:3]) > 50 and sum(c[1][:3]) < 700]
                                 if filtered:
                                     dominant = max(filtered, key=lambda x: x[0])[1]
                                     accent_color = '#{:02x}{:02x}{:02x}'.format(dominant[0], dominant[1], dominant[2])
                                 else:
-                                    # Fallback to average
+                                                         
                                     avg = image.resize((1, 1)).getpixel((0, 0))
                                     accent_color = '#{:02x}{:02x}{:02x}'.format(avg[0], avg[1], avg[2])
                             except Exception as thumb_e:
@@ -179,7 +197,7 @@ class MediaMonitor(QThread):
                     if not ("remote procedure call failed" in str(props_e).lower() or "0x800706be" in str(props_e).lower()):
                         print(f"Properties error: {props_e}")
                     else:
-                        self.current_session = None # Reset session on RPC failure
+                        self.current_session = None                               
                     title, artist, accent_color = "Unknown Title", "", "#000000"
 
                 if (state_str != self.last_state or title != self.current_title or artist != self.current_artist):
@@ -188,7 +206,7 @@ class MediaMonitor(QThread):
                     self.last_state = state_str
                     self.lyrics = []
                     self.last_lyric_sent = ""
-                    self.lyrics_updated.emit("") # Clear lyrics
+                    self.lyrics_updated.emit("")               
                     if title != "Unknown Title" and title != "":
                         asyncio.create_task(self.fetch_lyrics(artist, title))
                     self.media_updated.emit(state_str, title, artist, accent_color)
@@ -205,6 +223,14 @@ class MediaMonitor(QThread):
             else:
                 print(f"Update media info error: {e}")
 
+    def get_safe_playback_info(self):
+        try:
+            if self.current_session:
+                return self.current_session.get_playback_info()
+        except:
+            pass
+        return None
+
     async def fetch_lyrics(self, artist, title):
         if not artist or not title:
             return
@@ -220,7 +246,7 @@ class MediaMonitor(QThread):
                     if lrc:
                         return self.parse_lrc(lrc)
                     elif data.get("plainLyrics"):
-                        # Fallback to plain lyrics as a single line (not ideal for sync)
+                                                                                        
                         return [(0, data.get("plainLyrics").split('\n')[0])]
                 return []
             except Exception as e:
@@ -235,7 +261,7 @@ class MediaMonitor(QThread):
     def parse_lrc(self, lrc_text):
         lyrics = []
         for line in lrc_text.splitlines():
-            # Match formats like [00:12.34] or [00:12]
+                                                      
             match = re.search(r'\[(\d+):(\d+(?:\.\d+)?)\](.*)', line)
             if match:
                 m, s, text = match.groups()
@@ -243,7 +269,7 @@ class MediaMonitor(QThread):
                 lyrics.append((timestamp, text.strip()))
         return sorted(lyrics, key=lambda x: x[0])
 
-    # Control Methods
+                     
     def toggle_play_pause(self):
         if self.current_session and self.loop:
             asyncio.run_coroutine_threadsafe(self._do_toggle(), self.loop)

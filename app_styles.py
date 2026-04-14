@@ -1,14 +1,14 @@
 # app_styles.py
 
 def get_stylesheet(accent_color: str = "#0078D7") -> str:
-    """
-    Returns the QSS stylesheet for the Dynamic Island.
-    The accent color is used for highlights/graphs.
-    """
+\
+\
+\
+       
     return f"""
     QWidget#IslandWidget {{
-        background-color: #000000;
-        border: 1.2px solid rgba(255, 255, 255, 40);
+        background-color: transparent;
+        border: none;
     }}
     
     QLabel {{

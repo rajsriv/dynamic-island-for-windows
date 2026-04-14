@@ -3,7 +3,7 @@ import time
 from PyQt6.QtCore import QThread, pyqtSignal
 
 class KeyLockMonitor(QThread):
-    # Sends (lock_name, is_on)
+                              
     lock_changed = pyqtSignal(str, bool)
 
     def __init__(self, parent=None):
@@ -13,11 +13,11 @@ class KeyLockMonitor(QThread):
         self.last_num = self.get_num_lock()
 
     def get_caps_lock(self):
-        # VK_CAPITAL = 0x14
+                           
         return (ctypes.windll.user32.GetKeyState(0x14) & 1) != 0
 
     def get_num_lock(self):
-        # VK_NUMLOCK = 0x90
+                           
         return (ctypes.windll.user32.GetKeyState(0x90) & 1) != 0
 
     def run(self):

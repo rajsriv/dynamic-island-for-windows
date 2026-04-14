@@ -13,7 +13,7 @@ class WeatherMonitor(QThread):
         self.lon = lon
         self.running = True
         self.force_update = False
-        self.update_interval = 1800  # 30 minutes
+        self.update_interval = 1800              
         
     def set_location(self, city):
         try:
@@ -60,7 +60,7 @@ class WeatherMonitor(QThread):
         return mapping.get(code, "Unknown")
 
     def run(self):
-        time_since_last = self.update_interval # Fetch immediately on start
+        time_since_last = self.update_interval                             
         while self.running:
             if time_since_last >= self.update_interval or self.force_update:
                 try:
@@ -71,7 +71,7 @@ class WeatherMonitor(QThread):
                         current = res["current_weather"]
                         hourly = res["hourly"]
                         
-                        # Prepare hourly data (next 5 hours)
+                                                            
                         hourly_data = []
                         current_time_str = datetime.datetime.now().strftime("%Y-%m-%dT%H:00")
                         try:
@@ -103,7 +103,7 @@ class WeatherMonitor(QThread):
                 except Exception as e:
                     print(f"Weather update error: {e}")
             
-            time.sleep(1) # Check every second for force_update
+            time.sleep(1)                                      
             time_since_last += 1
 
     def stop(self):

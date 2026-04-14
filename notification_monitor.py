@@ -3,7 +3,7 @@ from PyQt6.QtCore import QThread, pyqtSignal
 from winsdk.windows.ui.notifications.management import UserNotificationListener, UserNotificationListenerAccessStatus
 
 class NotificationMonitor(QThread):
-    # Sends (app_name, title, body)
+                                   
     notification_received = pyqtSignal(str, str, str)
 
     def __init__(self, parent=None):
@@ -40,13 +40,13 @@ class NotificationMonitor(QThread):
             print(f"Notification setup error: {e}")
             return
 
-        # Polling for simplicity in this bridge, as some WinRT events are tricky in Py 
-        # Better: listener.add_notification_changed(self.on_notification_changed)
-        # But we'll poll for 'unread' or new IDs.
+                                                                                       
+                                                                                 
+                                                 
         
         known_ids = set()
-        # Prime the list
-        initial = await self.listener.get_notifications_async(0x1) # 0x1 = Toast
+                        
+        initial = await self.listener.get_notifications_async(0x1)              
         for n in initial:
             known_ids.add(n.id)
 
@@ -58,7 +58,7 @@ class NotificationMonitor(QThread):
                         known_ids.add(n.id)
                         try:
                             app_name = n.app_info.display_info.display_name
-                            # Toast content
+                                           
                             bindings = n.notification.visual.bindings
                             title = ""
                             body = ""
@@ -70,7 +70,7 @@ class NotificationMonitor(QThread):
                             self.notification_received.emit(app_name, title, body)
                         except: pass
             except: pass
-            await asyncio.sleep(1.0) # Check every second for new toasts
+            await asyncio.sleep(1.0)                                    
 
     def stop(self):
         self._is_running = False

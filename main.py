@@ -23,7 +23,7 @@ from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout,
                              QLabel, QMenu, QPushButton, QGraphicsOpacityEffect, 
                              QGridLayout, QFrame, QProgressBar, QInputDialog)
 
-# DWM Constants
+               
 DWMWA_SYSTEMBACKDROP_TYPE = 38
 DWMWA_WINDOW_CORNER_PREFERENCE = 33
 DWMSBT_DISABLE = 1
@@ -71,18 +71,18 @@ class ControlBall(QPushButton):
         
         self._current_anim = QParallelAnimationGroup(self)
         
-        # Position animation
+                            
         p_anim = QPropertyAnimation(self, b"pos")
         p_anim.setDuration(duration)
         p_anim.setEasingCurve(QEasingCurve.Type.OutBack if opacity > 0 else QEasingCurve.Type.OutExpo)
         p_anim.setEndValue(pos)
         
-        # Opacity animation
+                           
         o_anim = QPropertyAnimation(self._opacity_effect, b"opacity")
         o_anim.setDuration(duration)
         o_anim.setEndValue(opacity)
 
-        # Scale animation
+                         
         s_anim = QPropertyAnimation(self, b"ball_scale")
         s_anim.setDuration(duration)
         s_anim.setEasingCurve(QEasingCurve.Type.OutBack)
@@ -101,11 +101,14 @@ class DynamicIsland(QWidget):
     def __init__(self):
         super().__init__()
         
-        # Window Flags: Frameless, stay on top, tool window (no taskbar)
+                                                                        
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | 
                             Qt.WindowType.WindowStaysOnTopHint | 
                             Qt.WindowType.Tool)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground)
+        
+        self.compatibility_mode = False
         
         self.accent_color = self.get_windows_accent_color()
         self.album_accent_color = QColor(0, 0, 0)
@@ -118,7 +121,7 @@ class DynamicIsland(QWidget):
         
         self.last_power_plugged = psutil.sensors_battery().power_plugged if psutil.sensors_battery() else False
         
-        # Internal Animated Dimensions (The "Liquid Ink")
+                                                         
         self._island_w = 180
         self._island_h = 40
         self.island_w_anim = QPropertyAnimation(self, b"island_w")
@@ -162,7 +165,7 @@ class DynamicIsland(QWidget):
         self.power_timer.timeout.connect(self.check_power_status)
         self.power_timer.start(2000)
         
-        # Dimensions Constants
+                              
         self.IDLE_W, self.IDLE_H = 180, 40
         self.EXP_W, self.EXP_H = 340, 100
         self.PERF_W, self.PERF_H = 360, 180
@@ -171,7 +174,7 @@ class DynamicIsland(QWidget):
         self.WEATHER_W, self.WEATHER_H = 360, 160
         self.CALENDAR_W, self.CALENDAR_H = 360, 165
         self.MONTH_W, self.MONTH_H = 360, 140
-        self.WIDE_W = 1200 # Extra wide for absolute 'nothingness' fade
+        self.WIDE_W = 1200                                             
         
         self.is_charging = False
         
@@ -184,7 +187,7 @@ class DynamicIsland(QWidget):
         self.media_lyric_text = ""
         self.LYRIC_W = 640
         
-        # Basics Wheel State
+                            
         self.basic_controls_index = 0
         self.basic_controls_items = [
             {"name": "Shutdown", "icon": "mdi.power", "cmd": "shutdown /s /t 0"},
@@ -199,7 +202,7 @@ class DynamicIsland(QWidget):
         ]
         self.control_balls = []
         
-        # Notification/Event queue
+                                  
         self.event_title, self.event_text = "", ""
         self.revert_timer = QTimer(self); self.revert_timer.setSingleShot(True); self.revert_timer.timeout.connect(lambda: self.change_state("Idle"))
         
@@ -212,7 +215,7 @@ class DynamicIsland(QWidget):
         self.anim_timer = QTimer(self); self.anim_timer.timeout.connect(self.update_animation); self.anim_timer.start(16)
         self.hit_timer = QTimer(self); self.hit_timer.timeout.connect(self.check_mouse_position); self.hit_timer.start(25)
         
-        # FIXED CANVAS: Force a large fixed size to prevent layout shrinking
+                                                                            
         self.setFixedSize(1200, 300); self.recenter_window()
         
         self.anim_group = QParallelAnimationGroup()
@@ -249,9 +252,11 @@ class DynamicIsland(QWidget):
                 with open(self.config_path, "r") as f:
                     self.settings = json.load(f)
             except:
-                self.settings = {"location": "Varanasi, India", "lat": 25.3333, "lon": 83.0}
+                self.settings = {"location": "Varanasi, India", "lat": 25.3333, "lon": 83.0, "compatibility_mode": False}
         else:
-            self.settings = {"location": "Varanasi, India", "lat": 25.3333, "lon": 83.0}
+            self.settings = {"location": "Varanasi, India", "lat": 25.3333, "lon": 83.0, "compatibility_mode": False}
+        
+        self.compatibility_mode = self.settings.get("compatibility_mode", False)
         
         if hasattr(self, 'weather_monitor'):
             self.weather_monitor.city = self.settings.get("location", "Varanasi, India")
@@ -263,6 +268,7 @@ class DynamicIsland(QWidget):
         self.settings["location"] = self.weather_monitor.city
         self.settings["lat"] = self.weather_monitor.lat
         self.settings["lon"] = self.weather_monitor.lon
+        self.settings["compatibility_mode"] = self.compatibility_mode
         with open(self.config_path, "w") as f:
             json.dump(self.settings, f, indent=4)
 
@@ -277,7 +283,7 @@ class DynamicIsland(QWidget):
                 self.show_notification("Weather", "Error", f"Could not find location: {city}")
 
     def get_current_radius(self):
-        # Keeps pill shape for small heights, switches to rounded rect for taller panels
+                                                                                        
         return min(self._island_h / 2.0, 30.0)
 
     @pyqtProperty(int)
@@ -302,20 +308,20 @@ class DynamicIsland(QWidget):
         p_rect = rect.adjusted(1, 1, -1, -1)
         radius = self.get_current_radius()
 
-        # 1. Background Charging Animation ("Behind" the island)
+                                                                
         if self.charging_phase > 0.0:
             self.paint_charging_ears(painter, rect, radius)
         
         painter.setPen(Qt.PenStyle.NoPen)
-        # 2. Drop shadow
+                        
         for i in range(5): 
             painter.setBrush(QColor(0, 0, 0, 15 - i*3))
             painter.drawRoundedRect(rect.adjusted(i, i, -i, -i), radius, radius)
         
-        # 3. Base Island
+                        
         painter.setBrush(QBrush(QColor(0, 0, 0))); painter.drawRoundedRect(rect, radius, radius)
 
-        # 4. Weather/Perf Animated Background (iOS style)
+                                                         
         if self._weather_bg_opacity > 0.0:
             self.paint_weather_bg(painter, rect, radius)
         if self._perf_bg_opacity > 0.0:
@@ -325,13 +331,13 @@ class DynamicIsland(QWidget):
         if self._month_bg_opacity > 0.0:
             self.paint_month_bg(painter, rect, radius)
             
-        # --- START STRICT CLIPPING ---
-        # Everything drawn after this point will be strictly contained within the rounded rect
+                                       
+                                                                                              
         clip_path = QPainterPath()
         clip_path.addRoundedRect(QRectF(rect), radius, radius)
         painter.setClipPath(clip_path)
 
-        can_anim = (self.current_state in ("Hover", "Notify") and self.features[self.current_feature_index] == "media") or \
+        can_anim = (self.current_state in ("Hover", "Notify") and self.features[self.current_feature_index] == "media") or\
                    (self.current_state == "Idle" and self.features[self.current_feature_index] == "media" and self.media_state in ("Playing", "Paused"))
         
         if can_anim:
@@ -341,26 +347,26 @@ class DynamicIsland(QWidget):
         else:
             painter.setBrush(Qt.BrushStyle.NoBrush); painter.setPen(QPen(QColor(255, 255, 255, 30), 1.2)); painter.drawRoundedRect(p_rect, radius, radius)
 
-        # Content (Strictly Clipped)
-        # We now use a container widget with a physical mask to ensure no labels/icons overflow.
-        # Geometry is updated via property setters (island_w/island_h), no need to do it in paintEvent.
+                                    
+                                                                                                
+                                                                                                       
 
-        # Shine Sweep Animation (Strictly Clipped)
+                                                  
         if self.shine_phase > 0.0 and self.shine_phase < 1.0:
             self.paint_shine_sweep(painter, rect, radius)
         
-        painter.setClipping(False) # Restore clipping
-        # --- END STRICT CLIPPING ---
+        painter.setClipping(False)                   
+                                     
 
     def paint_shine_sweep(self, painter, rect, radius):
         import math
         painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Screen)
         
-        # shine_phase goes from 0.0 to 1.0 (Expansion progress)
+                                                               
         p = self.shine_phase
         if p <= 0 or p >= 1.0: return
         
-        # Opacity curve: peaks early then dissipates
+                                                    
         opacity = math.sin(p * math.pi)
         
         start_x = 35
@@ -414,8 +420,8 @@ class DynamicIsland(QWidget):
     def update_animation(self):
         self.gradient_phase = (self.gradient_phase + 0.005) % 1.0
         self.weather_bg_phase = (self.weather_bg_phase + 0.003) % 1.0
-        if self.current_state in ("Hover", "Notify") or self.media_state in ("Playing", "Paused") or \
-           self._weather_bg_opacity > 0.0 or self._perf_bg_opacity > 0.0 or \
+        if self.current_state in ("Hover", "Notify") or self.media_state in ("Playing", "Paused") or\
+           self._weather_bg_opacity > 0.0 or self._perf_bg_opacity > 0.0 or\
            self._calendar_bg_opacity > 0.0 or self._month_bg_opacity > 0.0: 
             self.update()
 
@@ -464,7 +470,7 @@ class DynamicIsland(QWidget):
         self.perf_layout.addWidget(self.cpu_label); self.perf_layout.addWidget(self.ram_label)
         self.header_layout.addStretch(); self.header_layout.addWidget(self.media_controls); self.header_layout.addWidget(self.perf_widget); self.media_controls.hide(); self.perf_widget.hide()
         
-        # New Feature Panels
+                            
         self.perf_panel = self.create_perf_panel()
         self.weather_panel = self.create_weather_panel()
         self.calendar_panel = self.create_calendar_panel()
@@ -473,11 +479,11 @@ class DynamicIsland(QWidget):
         
         for p in [self.perf_panel, self.weather_panel, self.calendar_panel, self.month_panel, self.basics_panel]: p.hide()
         
-        # Instantiate 4 Control Balls for smooth carousel
+                                                         
         for _ in range(4):
             ball = ControlBall(self)
             ball.hide()
-            # Initial off-screen position to prevent first-hover jump
+                                                                     
             ball.move(-100, -100)
             self.control_balls.append(ball)
         
@@ -498,7 +504,7 @@ class DynamicIsland(QWidget):
         self.key_monitor = KeyLockMonitor(self); self.key_monitor.lock_changed.connect(self.show_key_event); self.key_monitor.start()
         self.notif_monitor = NotificationMonitor(self); self.notif_monitor.notification_received.connect(self.show_notification); self.notif_monitor.start()
         
-        # Weather monitor with loaded settings
+                                              
         loc = self.settings.get("location", "Varanasi, India")
         lat = self.settings.get("lat", 25.3333)
         lon = self.settings.get("lon", 83.0)
@@ -525,25 +531,25 @@ class DynamicIsland(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Screen)
 
-        # 1. Main Soft Glow Aura (Behind and around)
+                                                    
         glow_path = QPainterPath()
         glow_path.addRoundedRect(rect.adjusted(-20*opacity, -10*opacity, 20*opacity, 10*opacity), radius+10, radius+10)
         
-        # Multi-layered soft glow
+                                 
         for i in range(5):
             alpha = int(70 * opacity / (i + 1))
             glow_grad = QRadialGradient(rect.center(), rect.width() / 1.5)
-            # Alternate Cyan and Deep Purple for vibrancy
+                                                         
             color = QColor(0, 255, 255, alpha) if i % 2 == 0 else QColor(140, 0, 255, alpha)
             painter.setPen(QPen(color, 12 + i*8, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
             painter.drawPath(glow_path)
 
-        # 2. Cinematic Laser Beams (Thicker and Glowing)
+                                                        
         beam_len = 500 * opacity
         left_edge = rect.left()
         right_edge = rect.right()
         
-        # Right Beam - Tapered Glow
+                                   
         for i in range(3):
             beam_w = 4 - i
             if beam_w <= 0: continue
@@ -558,7 +564,7 @@ class DynamicIsland(QWidget):
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawLine(QPointF(right_edge, centerY), QPointF(right_edge + beam_len, centerY))
 
-        # Left Beam - Tapered Glow
+                                  
         for i in range(3):
             beam_w = 4 - i
             if beam_w <= 0: continue
@@ -572,7 +578,7 @@ class DynamicIsland(QWidget):
             painter.setPen(QPen(QBrush(l_beam_grad), beam_w + 1, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
             painter.drawLine(QPointF(left_edge, centerY), QPointF(left_edge - beam_len, centerY))
 
-        # 3. Bright Core Impact points
+                                      
         painter.setBrush(QColor(255, 255, 255, int(255 * opacity)))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawEllipse(QPointF(right_edge, centerY), 4, 3)
@@ -621,13 +627,13 @@ class DynamicIsland(QWidget):
         painter.setOpacity(self._weather_bg_opacity)
         p = self.weather_bg_phase * 2 * math.pi
         
-        # Base deep blue
+                        
         grad = QLinearGradient(rect.topLeft(), rect.bottomLeft())
         grad.setColorAt(0, QColor(20, 40, 100))
         grad.setColorAt(1, QColor(10, 20, 60))
         painter.setBrush(grad); painter.drawRoundedRect(rect, radius, radius)
         
-        # Liquid Blooms
+                       
         painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Screen)
         for i, color in enumerate([QColor(60, 130, 250, 120), QColor(40, 80, 220, 100)]):
             x = rect.center().x() + math.sin(p + i) * (rect.width() * 0.3)
@@ -640,15 +646,15 @@ class DynamicIsland(QWidget):
     def paint_perf_bg(self, painter, rect, radius):
         painter.save()
         painter.setOpacity(self._perf_bg_opacity)
-        p = self.weather_bg_phase * 2 * math.pi # Use same phase for sync
+        p = self.weather_bg_phase * 2 * math.pi                          
         
-        # Base deep forest green
+                                
         grad = QLinearGradient(rect.topLeft(), rect.bottomLeft())
         grad.setColorAt(0, QColor(0, 40, 20))
         grad.setColorAt(1, QColor(0, 20, 10))
         painter.setBrush(grad); painter.drawRoundedRect(rect, radius, radius)
         
-        # Liquid Lime Blooms
+                            
         painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Screen)
         for i, color in enumerate([QColor(50, 255, 50, 80), QColor(200, 255, 0, 60)]):
             x = rect.center().x() + math.sin(p * 0.8 + i*1.5) * (rect.width() * 0.35)
@@ -663,13 +669,13 @@ class DynamicIsland(QWidget):
         painter.setOpacity(self._calendar_bg_opacity)
         p = self.weather_bg_phase * 2 * math.pi
         
-        # Base deep amber/brown
+                               
         grad = QLinearGradient(rect.topLeft(), rect.bottomLeft())
         grad.setColorAt(0, QColor(60, 40, 0))
         grad.setColorAt(1, QColor(30, 20, 0))
         painter.setBrush(grad); painter.drawRoundedRect(rect, radius, radius)
         
-        # Liquid Amber/Yellow Blooms
+                                    
         painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Screen)
         for i, color in enumerate([QColor(255, 180, 0, 90), QColor(255, 255, 0, 60)]):
             x = rect.center().x() + math.sin(p * 0.9 + i*2) * (rect.width() * 0.3)
@@ -684,13 +690,13 @@ class DynamicIsland(QWidget):
         painter.setOpacity(self._month_bg_opacity)
         p = self.weather_bg_phase * 2 * math.pi
         
-        # Base deep midnight purple
+                                   
         grad = QLinearGradient(rect.topLeft(), rect.bottomLeft())
         grad.setColorAt(0, QColor(30, 0, 50))
         grad.setColorAt(1, QColor(15, 0, 30))
         painter.setBrush(grad); painter.drawRoundedRect(rect, radius, radius)
         
-        # Liquid Purple/Magenta Blooms
+                                      
         painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Screen)
         for i, color in enumerate([QColor(180, 0, 255, 80), QColor(255, 0, 180, 60)]):
             x = rect.center().x() + math.sin(p * 1.1 + i) * (rect.width() * 0.3)
@@ -722,7 +728,7 @@ class DynamicIsland(QWidget):
         h1.addWidget(self.create_action_button("weather"))
         l.addLayout(h1)
         self.hourly_layout = QHBoxLayout(); self.hourly_layout.setSpacing(5)
-        # Placeholder slots
+                           
         self.hourly_slots = []
         for _ in range(5):
             slot = QVBoxLayout(); slot.setSpacing(2); st = QLabel("--"); st.setStyleSheet("font-size: 9px; color: #888;"); st.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -760,10 +766,10 @@ class DynamicIsland(QWidget):
     def create_perf_panel(self):
         w = QWidget(); l = QVBoxLayout(w); l.setContentsMargins(15, 12, 15, 18); l.setSpacing(12)
         header = QHBoxLayout(); title = QLabel("System Status"); title.setStyleSheet("font-weight: bold; font-size: 15px;")
-        header.addWidget(title); header.addStretch(); header.addWidget(self.create_action_button("month")) # Fallback
+        header.addWidget(title); header.addStretch(); header.addWidget(self.create_action_button("month"))           
         l.addLayout(header)
 
-        # Helper for rows
+                         
         def add_item(layout, icon, label):
             v = QVBoxLayout(); v.setSpacing(4)
             h = QHBoxLayout(); ico = QLabel(); ico.setPixmap(qta.icon(icon, color="white").pixmap(14, 14))
@@ -832,15 +838,15 @@ class DynamicIsland(QWidget):
         cpu, ram, disk = data["cpu"], data["ram"], data["disk"]
         down, up = data["down"], data["up"]
         
-        # Header (Small - used in Idle/Notify)
+                                              
         self.cpu_label.setText(f"CPU: {int(cpu)}%"); self.ram_label.setText(f"RAM: {int(ram)}%")
         
-        # Large Panel Detailed Metrics
+                                      
         self.cpu_bar_L[0].setValue(int(cpu)); self.cpu_bar_L[1].setText(f"{int(cpu)}%")
         self.ram_bar_L[0].setValue(int(ram)); self.ram_bar_L[1].setText(f"{int(ram)}%")
         self.disk_bar_L[0].setValue(int(disk)); self.disk_bar_L[1].setText(f"{int(disk)}%")
         
-        # Net speed formatting helper
+                                     
         def fmt(b):
             if b < 1024: return f"{int(b)} B/s"
             if b < 1024*1024: return f"{int(b/1024)} KB/s"
@@ -861,7 +867,7 @@ class DynamicIsland(QWidget):
         self.media_lyric_text = text
         self.showing_lyrics = bool(text)
         
-        # If we start or stop showing lyrics, trigger a transition to update width
+                                                                                  
         if was_showing != self.showing_lyrics:
             self.execute_liquid_transition()
         else:
@@ -900,7 +906,7 @@ class DynamicIsland(QWidget):
         super().wheelEvent(event)
 
     def keyPressEvent(self, event):
-        # Arrow navigation removed per user request, using on-screen buttons instead
+                                                                                    
         super().keyPressEvent(event)
 
     def scroll_controls(self, delta):
@@ -908,34 +914,34 @@ class DynamicIsland(QWidget):
         prev_idx = self.basic_controls_index
         self.basic_controls_index = (self.basic_controls_index + delta) % n
         
-        # Perform carousel animation
+                                    
         self.animate_control_balls(True)
         
     def refresh_control_balls(self):
-        # This is now handled by animate_control_balls for smooth rotation
+                                                                          
         pass
 
     def animate_control_balls(self, show):
-        # Basics always uses IDLE_W geometry for its arc calculation
-        # We use window-local coordinates (relative to self.width()) to match paintEvent
+                                                                    
+                                                                                        
         pill_x = (self.width() - self.IDLE_W) // 2
         rect = QRect(pill_x, 20, self.IDLE_W, self.IDLE_H)
-        cx = rect.right() - 22 # Base X reference
+        cx = rect.right() - 22                   
         cy = rect.center().y()
         
-        # New Arc: Right -> Bottom-Right -> Bottom
+                                                  
         targets = [
-            QPoint(int(cx + 35), int(cy - 60)), # 0: Hidden (above right)
-            QPoint(int(cx + 42), int(cy - 24)), # 1: Right
-            QPoint(int(cx + 25), int(cy + 22)), # 2: Bottom-Right
-            QPoint(int(cx - 18), int(cy + 44)), # 3: Bottom (Fine-tuned spacing)
-            QPoint(int(cx - 58), int(cy + 44))  # 4: Hidden (Consistent spacing)
+            QPoint(int(cx + 35), int(cy - 60)),                          
+            QPoint(int(cx + 42), int(cy - 24)),           
+            QPoint(int(cx + 25), int(cy + 22)),                  
+            QPoint(int(cx - 18), int(cy + 44)),                                 
+            QPoint(int(cx - 58), int(cy + 44))                                  
         ]
         
         n_items = len(self.basic_controls_items)
         
-        # Calculate which 3 items + 1 upcoming item to show
-        # Visible are items at (basic_controls_index - 1, basic_controls_index, basic_controls_index + 1)
+                                                           
+                                                                                                         
         indices = [
             (self.basic_controls_index - 2) % n_items,
             (self.basic_controls_index - 1) % n_items,
@@ -944,27 +950,27 @@ class DynamicIsland(QWidget):
             (self.basic_controls_index + 2) % n_items
         ]
 
-        # Use 4/5 balls to animate Between 5 logical positions
-        # For simplicity, we'll assign items to balls and animate them
+                                                              
+                                                                      
         for i, ball in enumerate(self.control_balls):
             if not show:
-                # Fade out and move in
+                                      
                 group = QParallelAnimationGroup(self)
                 pos_anim = QPropertyAnimation(ball, b"pos"); pos_anim.setDuration(400); pos_anim.setEasingCurve(QEasingCurve.Type.InQuad)
-                # Sink into the bottom-right corner instead of just center
+                                                                          
                 pos_anim.setEndValue(QPoint(int(rect.right() - 20), int(rect.bottom() - 20)))
                 opa_anim = QPropertyAnimation(ball.graphicsEffect(), b"opacity"); opa_anim.setDuration(400)
                 opa_anim.setEndValue(0.0)
-                # Scale down during hide
+                                        
                 s_anim = QPropertyAnimation(ball, b"ball_scale"); s_anim.setDuration(400); s_anim.setEndValue(0.7)
                 group.addAnimation(pos_anim); group.addAnimation(opa_anim); group.addAnimation(s_anim)
                 group.finished.connect(ball.hide); group.start()
                 continue
 
-            # SHOW LOGIC
+                        
             if show:
                 if ball.isHidden() or ball.graphicsEffect().opacity() < 0.1:
-                    # Ensure it starts from behind the pill edge to prevent 'throwing from far'
+                                                                                               
                     ball.move(QPoint(int(rect.right() - 20), int(rect.bottom() - 20)))
                 ball.show()
                 
@@ -974,14 +980,14 @@ class DynamicIsland(QWidget):
             ball.setIcon(qta.icon(item["icon"], color='white'))
             ball.action_cmd = item["cmd"]
             
-            target = targets[i+1] # Map ball i to target i+1 (1, 2, 3, 4)
+            target = targets[i+1]                                        
             opacity = 1.0 if (i >= 0 and i <= 2) else 0.0
             
-            # Focal ball (the one at index) scales up
-            # i=1 corresponds to the item at self.basic_controls_index
+                                                     
+                                                                      
             scale = 1.15 if i == 1 else 1.0
             
-            # iOS Stagger effect: delay each ball's motion slightly
+                                                                   
             delay = i * 45 
             ball.animate_to(target, opacity, scale=scale, delay=delay)
 
@@ -1003,19 +1009,19 @@ class DynamicIsland(QWidget):
             elif feature == "weather": w, h = self.WEATHER_W, self.WEATHER_H
             elif feature == "calendar": w, h = self.CALENDAR_W, self.CALENDAR_H
             elif feature == "month": w, h = self.MONTH_W, self.MONTH_H
-            elif feature == "basics": w, h = self.IDLE_W, self.IDLE_H # Keep default size
+            elif feature == "basics": w, h = self.IDLE_W, self.IDLE_H                    
             else: w, h = self.EXP_W, self.EXP_H
         if not self.is_charging:
              self.shine_anim.stop(); self.shine_anim.setStartValue(0.0); self.shine_anim.setEndValue(1.0); self.shine_anim.start()
         
-        # BG Cross-fades (Multi-theme)
+                                      
         def set_bg_target(anim, current_val, target_val):
             anim.stop(); anim.setStartValue(current_val); anim.setEndValue(target_val); anim.start()
 
         is_hover = (self.current_state != "Idle" and self.current_state != "Notify")
         feat = self.features[self.current_feature_index] if is_hover else None
 
-        # Basic Controls Balls Animation
+                                        
         self.animate_control_balls(feat == "basics")
         
         set_bg_target(self.weather_bg_anim, self._weather_bg_opacity, 1.0 if feat == "weather" else 0.0)
@@ -1050,20 +1056,36 @@ class DynamicIsland(QWidget):
         centerX = self.width() / 2
         return QRectF(centerX - W/2, 10, W, H)
 
-    def recenter_window(self): self.move(self.get_centered_x(self.width()), 10)
+    def recenter_window(self):
+        if self.compatibility_mode:
+            # Unlock size restrictions to allow full-screen expansion
+            self.setMinimumSize(0, 0)
+            self.setMaximumSize(16777215, 16777215)
+            sr = self.screen().availableGeometry()
+            self.setGeometry(sr)
+        else:
+            self.setFixedSize(1200, 300)
+            self.move(self.get_centered_x(self.width()), 10)
+
+    def toggle_compatibility_mode(self):
+        self.compatibility_mode = not self.compatibility_mode
+        self.save_settings()
+        self.recenter_window()
+        self.update_island_geometry(self.get_island_rect(), self.get_current_radius())
+        self.update()
 
     def check_mouse_position(self):
         if self.current_state == "Notify": return
         cursor_pos = QCursor.pos()
         rect = self.get_island_rect()
         
-        # Correctly map both corners to global coordinates for a reliable hit-test
+                                                                                  
         global_top_left = self.mapToGlobal(QPoint(int(rect.x()), int(rect.y())))
         global_bottom_right = self.mapToGlobal(QPoint(int(rect.right()), int(rect.bottom())))
         global_rect = QRect(global_top_left, global_bottom_right)
         
-        # Expanded right and bottom margin to include the popped-out buttons
-        # 80px right and 50px bottom ensures the user can hover the menu balls
+                                                                            
+                                                                              
         hit_rect = global_rect.adjusted(-15, -10, 80, 50)  
         hwnd = int(self.winId())
         ex = ctypes.windll.user32.GetWindowLongW(hwnd, -20)
@@ -1080,7 +1102,7 @@ class DynamicIsland(QWidget):
                 ctypes.windll.user32.SetWindowLongW(hwnd, -20, ex | WS_EX_TRANSPARENT)
             if self.current_state == "Hover":
                 if not self.revert_timer.isActive():
-                    self.revert_timer.start(1200) # Grace period before returning to Idle
+                    self.revert_timer.start(1200)
 
     def contextMenuEvent(self, event):
         menu = QMenu(self); menu.setStyleSheet("QMenu { background-color: #1a1a1a; color: #fff; border: 1px solid #333; padding: 4px; border-radius: 6px; } QMenu::item:selected { background-color: " + self.accent_color + "; }")
@@ -1092,10 +1114,24 @@ class DynamicIsland(QWidget):
             a = sm.addAction(s); a.setCheckable(True); a.setChecked(self.island_style == s); a.triggered.connect(lambda _, st=s: setattr(self, 'island_style', st))
         
         menu.addSeparator()
+        comp_action = menu.addAction("Fix Big Box (Compatibility Mode)")
+        comp_action.setCheckable(True)
+        comp_action.setChecked(self.compatibility_mode)
+        comp_action.triggered.connect(self.toggle_compatibility_mode)
+        
         loc_action = menu.addAction("Change Location")
         loc_action.triggered.connect(self.change_location_dialog)
         
-        menu.addSeparator(); qa = menu.addAction("Quit"); qa.triggered.connect(QApplication.quit); menu.exec(self.mapToGlobal(event.pos()))
+        menu.addSeparator(); qa = menu.addAction("Quit"); qa.triggered.connect(self.close); menu.exec(self.mapToGlobal(event.pos()))
+
+    def closeEvent(self, event):
+                                   
+        self.perf_monitor.stop()
+        self.media_monitor.stop()
+        self.key_monitor.stop()
+        self.notif_monitor.stop()
+        self.weather_monitor.stop()
+        super().closeEvent(event)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv); island = DynamicIsland(); island.show(); sys.exit(app.exec())

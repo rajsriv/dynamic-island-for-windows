@@ -24,7 +24,7 @@ class PerfMonitor(QThread):
             cur_time = time.time()
             dt = cur_time - last_time
             
-            # Bytes per second
+                              
             down = (cur_net.bytes_recv - last_net.bytes_recv) / dt if dt > 0 else 0
             up = (cur_net.bytes_sent - last_net.bytes_sent) / dt if dt > 0 else 0
             
