@@ -343,7 +343,7 @@ class DynamicIsland(QWidget):
 
         # Content (Strictly Clipped)
         # We now use a container widget with a physical mask to ensure no labels/icons overflow.
-        self.update_island_geometry(rect, radius)
+        # Geometry is updated via property setters (island_w/island_h), no need to do it in paintEvent.
 
         # Shine Sweep Animation (Strictly Clipped)
         if self.shine_phase > 0.0 and self.shine_phase < 1.0:

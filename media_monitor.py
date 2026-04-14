@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 import re
 import requests
 import io
@@ -41,7 +42,7 @@ class MediaMonitor(QThread):
 
         while self._is_running:
             await self.check_lyric_sync()
-            await asyncio.sleep(0.05) # 20fps check for ultra-smooth sync
+            await asyncio.sleep(0.02) # 50fps precision sync
 
     async def check_lyric_sync(self):
         if not self.current_session or not self.lyrics:
@@ -52,9 +53,12 @@ class MediaMonitor(QThread):
             if not timeline:
                 return
             
-            # Position is a datetime.timedelta
-            # Increase offset to 0.8s to fix consistent 'lateness' reported by user
-            pos_sec = timeline.position.total_seconds() + 0.8
+            # Audio Timeline Interpolation
+            now = datetime.datetime.now(datetime.timezone.utc)
+            delta = (now - timeline.last_updated_time).total_seconds()
+            
+            # Base position + interpolation delta + user-requested 1.0s lead
+            pos_sec = timeline.position.total_seconds() + delta + 1.0
             
             # Find the current line
             current_line = ""
