@@ -4,6 +4,8 @@
 
 A sleek, fluid, and highly customizable Dynamic Island for Windows built with Python and PyQt6.
 
+# Scroll on the Panels !
+
 ## Features
 
 - **Fluid Animations**: Smooth transitions between states (Idle, Hover, Music, Notifications).
