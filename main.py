@@ -263,6 +263,8 @@ class DynamicIsland(QWidget):
             self.settings = {"location": "Varanasi, India", "lat": 25.3333, "lon": 83.0, "compatibility_mode": False}
         
         self.compatibility_mode = self.settings.get("compatibility_mode", False)
+        self.island_style = self.settings.get("island_style", "Default")
+        self.animation_style = self.settings.get("animation_style", "Fluid Blobs")
         
         if hasattr(self, 'weather_monitor'):
             self.weather_monitor.city = self.settings.get("location", "Varanasi, India")
@@ -275,6 +277,8 @@ class DynamicIsland(QWidget):
         self.settings["lat"] = self.weather_monitor.lat
         self.settings["lon"] = self.weather_monitor.lon
         self.settings["compatibility_mode"] = self.compatibility_mode
+        self.settings["island_style"] = self.island_style
+        self.settings["animation_style"] = self.animation_style
         with open(self.config_path, "w") as f:
             json.dump(self.settings, f, indent=4)
 
@@ -289,7 +293,8 @@ class DynamicIsland(QWidget):
                 self.show_notification("Weather", "Error", f"Could not find location: {city}")
 
     def get_current_radius(self):
-                                                                                        
+        if self.island_style == "Notch Nook":
+            return min(self._island_h / 2.0, 18.0)
         return min(self._island_h / 2.0, 30.0)
 
     @pyqtProperty(int)
@@ -308,26 +313,62 @@ class DynamicIsland(QWidget):
         self.update_island_geometry(self.get_island_rect(), self.get_current_radius())
         self.update()
 
+    def build_notch_path(self, rect):
+        radius = self.get_current_radius()
+        scoop = min(radius * 1.4, 25.0)
+        path = QPainterPath()
+        path.moveTo(rect.left() - scoop, rect.top())
+        path.cubicTo(
+            rect.left() - scoop * 0.05, rect.top(),
+            rect.left(), rect.top() + scoop * 0.05,
+            rect.left(), rect.top() + scoop
+        )
+        path.lineTo(rect.left(), rect.bottom() - radius)
+        path.quadTo(rect.left(), rect.bottom(), rect.left() + radius, rect.bottom())
+        path.lineTo(rect.right() - radius, rect.bottom())
+        path.quadTo(rect.right(), rect.bottom(), rect.right(), rect.bottom() - radius)
+        path.lineTo(rect.right(), rect.top() + scoop)
+        path.cubicTo(
+            rect.right(), rect.top() + scoop * 0.05,
+            rect.right() + scoop * 0.05, rect.top(),
+            rect.right() + scoop, rect.top()
+        )
+        path.lineTo(rect.left() - scoop, rect.top())
+        path.closeSubpath()
+        return path
+
+    def _draw_shape(self, painter, rect, radius):
+        if self.island_style == "Notch Nook":
+            painter.drawPath(self.build_notch_path(rect))
+        else:
+            painter.drawRoundedRect(rect, radius, radius)
+
     def paintEvent(self, a0: QPaintEvent):
         painter = QPainter(self); painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = self.get_island_rect()
         p_rect = rect.adjusted(1, 1, -1, -1)
         radius = self.get_current_radius()
+        is_notch = self.island_style == "Notch Nook"
 
-                                                                
         if self.charging_phase > 0.0:
             self.paint_charging_ears(painter, rect, radius)
         
         painter.setPen(Qt.PenStyle.NoPen)
-                        
-        for i in range(5): 
-            painter.setBrush(QColor(0, 0, 0, 15 - i*3))
-            painter.drawRoundedRect(rect.adjusted(i, i, -i, -i), radius, radius)
-        
-                        
-        painter.setBrush(QBrush(QColor(0, 0, 0))); painter.drawRoundedRect(rect, radius, radius)
 
-                                                         
+        if is_notch:
+            notch_path = self.build_notch_path(rect)
+            for i in range(5):
+                painter.setBrush(QColor(0, 0, 0, 15 - i*3))
+                shadow_rect = rect.adjusted(i, 0, -i, -i)
+                painter.drawPath(self.build_notch_path(shadow_rect))
+            painter.setBrush(QBrush(QColor(0, 0, 0)))
+            painter.drawPath(notch_path)
+        else:
+            for i in range(5): 
+                painter.setBrush(QColor(0, 0, 0, 15 - i*3))
+                painter.drawRoundedRect(rect.adjusted(i, i, -i, -i), radius, radius)
+            painter.setBrush(QBrush(QColor(0, 0, 0))); painter.drawRoundedRect(rect, radius, radius)
+
         if self._weather_bg_opacity > 0.0:
             self.paint_weather_bg(painter, rect, radius)
         if self._perf_bg_opacity > 0.0:
@@ -337,10 +378,11 @@ class DynamicIsland(QWidget):
         if self._month_bg_opacity > 0.0:
             self.paint_month_bg(painter, rect, radius)
             
-                                       
-                                                                                              
         clip_path = QPainterPath()
-        clip_path.addRoundedRect(QRectF(rect), radius, radius)
+        if is_notch:
+            clip_path = self.build_notch_path(rect)
+        else:
+            clip_path.addRoundedRect(QRectF(rect), radius, radius)
         painter.setClipPath(clip_path)
 
         can_anim = (self.current_state in ("Hover", "Notify") and self.features[self.current_feature_index] == "media") or\
@@ -351,13 +393,10 @@ class DynamicIsland(QWidget):
             elif self.animation_style == "Fluid Blobs": self.paint_fluid_blobs(painter, rect, radius)
             elif self.animation_style == "Neon Border": self.paint_neon_border(painter, rect, radius)
         else:
-            painter.setBrush(Qt.BrushStyle.NoBrush); painter.setPen(QPen(QColor(255, 255, 255, 30), 1.2)); painter.drawRoundedRect(p_rect, radius, radius)
+            if not is_notch:
+                painter.setBrush(Qt.BrushStyle.NoBrush); painter.setPen(QPen(QColor(255, 255, 255, 30), 1.2))
+                painter.drawRoundedRect(p_rect, radius, radius)
 
-                                    
-                                                                                                
-                                                                                                       
-
-                                                  
         if self.shine_phase > 0.0 and self.shine_phase < 1.0:
             self.paint_shine_sweep(painter, rect, radius)
         
@@ -405,23 +444,37 @@ class DynamicIsland(QWidget):
         gradient = QLinearGradient(0, 0, rect.width(), 0); gradient.setSpread(QLinearGradient.Spread.RepeatSpread)
         gradient.setColorAt(0.0, Qt.GlobalColor.transparent); gradient.setColorAt(0.5, glow); gradient.setColorAt(1.0, Qt.GlobalColor.transparent)
         brush = QBrush(gradient); transform = QTransform(); transform.translate(self.gradient_phase * rect.width() * 2, 0); brush.setTransform(transform)
-        painter.setBrush(brush); painter.drawRoundedRect(rect, radius, radius)
+        painter.setBrush(brush); self._draw_shape(painter, rect, radius)
 
     def paint_fluid_blobs(self, painter, rect, radius):
         painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Screen)
         glow_color = QColor(self.album_accent_color); glow_color.setAlpha(100); p = self.gradient_phase * 2 * math.pi
         x1, y1 = rect.width() * (0.2 + 0.15 * math.sin(p)), rect.height() * (0.5 + 0.25 * math.cos(p))
         g1 = QRadialGradient(x1, y1, rect.width() * 0.45); g1.setColorAt(0, glow_color); g1.setColorAt(1, Qt.GlobalColor.transparent)
-        painter.setBrush(g1); painter.drawRoundedRect(rect, radius, radius)
+        painter.setBrush(g1); self._draw_shape(painter, rect, radius)
         x2, y2 = rect.width() * (0.8 + 0.15 * math.cos(p * 0.7)), rect.height() * (0.5 + 0.25 * math.sin(p * 1.2))
         g2 = QRadialGradient(x2, y2, rect.width() * 0.35); g2.setColorAt(0, QColor(glow_color).lighter(125)); g2.setColorAt(1, Qt.GlobalColor.transparent)
-        painter.setBrush(g2); painter.drawRoundedRect(rect, radius, radius)
+        painter.setBrush(g2); self._draw_shape(painter, rect, radius)
         painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
 
     def paint_neon_border(self, painter, rect, radius):
         conical = QConicalGradient(QPointF(rect.center()), self.gradient_phase * 360)
         for i, c in enumerate(["#F00", "#FF0", "#0F0", "#0FF", "#00F", "#F0F", "#F00"]): conical.setColorAt(i/6.0, QColor(c))
-        painter.setBrush(Qt.BrushStyle.NoBrush); painter.setPen(QPen(QBrush(conical), 2.2)); painter.drawRoundedRect(rect.adjusted(1,1,-1,-1), radius, radius)
+        painter.setBrush(Qt.BrushStyle.NoBrush); painter.setPen(QPen(QBrush(conical), 2.2))
+        if self.island_style == "Notch Nook":
+            border = QPainterPath()
+            r = radius; sc = min(r * 1.4, 25.0); pr = rect.adjusted(1,1,-1,-1)
+            border.moveTo(pr.left() - sc, pr.top())
+            border.cubicTo(pr.left() - sc * 0.05, pr.top(), pr.left(), pr.top() + sc * 0.05, pr.left(), pr.top() + sc)
+            border.lineTo(pr.left(), pr.bottom() - r)
+            border.quadTo(pr.left(), pr.bottom(), pr.left() + r, pr.bottom())
+            border.lineTo(pr.right() - r, pr.bottom())
+            border.quadTo(pr.right(), pr.bottom(), pr.right(), pr.bottom() - r)
+            border.lineTo(pr.right(), pr.top() + sc)
+            border.cubicTo(pr.right(), pr.top() + sc * 0.05, pr.right() + sc * 0.05, pr.top(), pr.right() + sc, pr.top())
+            painter.drawPath(border)
+        else:
+            painter.drawRoundedRect(rect.adjusted(1,1,-1,-1), radius, radius)
 
     def update_animation(self):
         self.gradient_phase = (self.gradient_phase + 0.005) % 1.0
@@ -501,6 +554,7 @@ class DynamicIsland(QWidget):
         self.content_layout.addWidget(self.basics_panel)
         
         self.island_root_layout.addWidget(self.content_container); self.update_content()
+        self.content_container.move(15, 0)
         self.update_island_geometry(self.get_island_rect(), self.get_current_radius())
 
     def setup_monitors(self):
@@ -522,7 +576,16 @@ class DynamicIsland(QWidget):
         if not hasattr(self, 'island_root'): return
         self.island_root.setGeometry(int(rect.x()), int(rect.y()), int(rect.width()), int(rect.height()))
         path = QPainterPath()
-        path.addRoundedRect(QRectF(0, 0, rect.width(), rect.height()), radius, radius)
+        if self.island_style == "Notch Nook":
+            path.moveTo(0, 0)
+            path.lineTo(rect.width(), 0)
+            path.lineTo(rect.width(), rect.height() - radius)
+            path.quadTo(rect.width(), rect.height(), rect.width() - radius, rect.height())
+            path.lineTo(radius, rect.height())
+            path.quadTo(0, rect.height(), 0, rect.height() - radius)
+            path.closeSubpath()
+        else:
+            path.addRoundedRect(QRectF(0, 0, rect.width(), rect.height()), radius, radius)
         self.island_root.setMask(QRegion(path.toFillPolygon().toPolygon()))
 
     def paint_charging_ears(self, painter, rect, radius):
@@ -637,7 +700,7 @@ class DynamicIsland(QWidget):
         grad = QLinearGradient(rect.topLeft(), rect.bottomLeft())
         grad.setColorAt(0, QColor(20, 40, 100))
         grad.setColorAt(1, QColor(10, 20, 60))
-        painter.setBrush(grad); painter.drawRoundedRect(rect, radius, radius)
+        painter.setBrush(grad); self._draw_shape(painter, rect, radius)
         
                        
         painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Screen)
@@ -646,7 +709,7 @@ class DynamicIsland(QWidget):
             y = rect.center().y() + math.cos(p * 0.7 + i*2) * (rect.height() * 0.2)
             bloom = QRadialGradient(QPointF(x, y), rect.width() * 0.6)
             bloom.setColorAt(0, color); bloom.setColorAt(1, Qt.GlobalColor.transparent)
-            painter.setBrush(bloom); painter.drawRoundedRect(rect, radius, radius)
+            painter.setBrush(bloom); self._draw_shape(painter, rect, radius)
         painter.restore()
 
     def paint_perf_bg(self, painter, rect, radius):
@@ -658,7 +721,7 @@ class DynamicIsland(QWidget):
         grad = QLinearGradient(rect.topLeft(), rect.bottomLeft())
         grad.setColorAt(0, QColor(0, 40, 20))
         grad.setColorAt(1, QColor(0, 20, 10))
-        painter.setBrush(grad); painter.drawRoundedRect(rect, radius, radius)
+        painter.setBrush(grad); self._draw_shape(painter, rect, radius)
         
                             
         painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Screen)
@@ -667,7 +730,7 @@ class DynamicIsland(QWidget):
             y = rect.center().y() + math.cos(p * 0.5 + i) * (rect.height() * 0.25)
             bloom = QRadialGradient(QPointF(x, y), rect.width() * 0.5)
             bloom.setColorAt(0, color); bloom.setColorAt(1, Qt.GlobalColor.transparent)
-            painter.setBrush(bloom); painter.drawRoundedRect(rect, radius, radius)
+            painter.setBrush(bloom); self._draw_shape(painter, rect, radius)
         painter.restore()
 
     def paint_calendar_bg(self, painter, rect, radius):
@@ -679,7 +742,7 @@ class DynamicIsland(QWidget):
         grad = QLinearGradient(rect.topLeft(), rect.bottomLeft())
         grad.setColorAt(0, QColor(60, 40, 0))
         grad.setColorAt(1, QColor(30, 20, 0))
-        painter.setBrush(grad); painter.drawRoundedRect(rect, radius, radius)
+        painter.setBrush(grad); self._draw_shape(painter, rect, radius)
         
                                     
         painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Screen)
@@ -688,7 +751,7 @@ class DynamicIsland(QWidget):
             y = rect.center().y() + math.cos(p * 0.6 + i) * (rect.height() * 0.2)
             bloom = QRadialGradient(QPointF(x, y), rect.width() * 0.55)
             bloom.setColorAt(0, color); bloom.setColorAt(1, Qt.GlobalColor.transparent)
-            painter.setBrush(bloom); painter.drawRoundedRect(rect, radius, radius)
+            painter.setBrush(bloom); self._draw_shape(painter, rect, radius)
         painter.restore()
 
     def paint_month_bg(self, painter, rect, radius):
@@ -700,7 +763,7 @@ class DynamicIsland(QWidget):
         grad = QLinearGradient(rect.topLeft(), rect.bottomLeft())
         grad.setColorAt(0, QColor(30, 0, 50))
         grad.setColorAt(1, QColor(15, 0, 30))
-        painter.setBrush(grad); painter.drawRoundedRect(rect, radius, radius)
+        painter.setBrush(grad); self._draw_shape(painter, rect, radius)
         
                                       
         painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Screen)
@@ -709,7 +772,7 @@ class DynamicIsland(QWidget):
             y = rect.center().y() + math.cos(p * 0.8 + i*1.2) * (rect.height() * 0.2)
             bloom = QRadialGradient(QPointF(x, y), rect.width() * 0.5)
             bloom.setColorAt(0, color); bloom.setColorAt(1, Qt.GlobalColor.transparent)
-            painter.setBrush(bloom); painter.drawRoundedRect(rect, radius, radius)
+            painter.setBrush(bloom); self._draw_shape(painter, rect, radius)
         painter.restore()
 
     def create_action_button(self, app_type):
@@ -1056,10 +1119,25 @@ class DynamicIsland(QWidget):
         if self.current_state == new: return
         self.current_state = new; self.execute_liquid_transition()
 
+    def set_island_style(self, style):
+        self.island_style = style
+        self.save_settings()
+        self.recenter_window()
+        self.execute_liquid_transition()
+        self.update_island_geometry(self.get_island_rect(), self.get_current_radius())
+        self.update()
+
+    def set_animation_style(self, style):
+        self.animation_style = style
+        self.save_settings()
+        self.update()
+
     def get_island_rect(self):
         W = self._island_w
         H = self._island_h
         centerX = self.width() / 2
+        if self.island_style == "Notch Nook":
+            return QRectF(centerX - W/2, 0, W, H)
         return QRectF(centerX - W/2, 10, W, H)
 
     def recenter_window(self):
@@ -1071,7 +1149,8 @@ class DynamicIsland(QWidget):
             self.setGeometry(sr)
         else:
             self.setFixedSize(1200, 300)
-            self.move(self.get_centered_x(self.width()), 10)
+            top_y = 0 if self.island_style == "Notch Nook" else 10
+            self.move(self.get_centered_x(self.width()), top_y)
 
     def toggle_compatibility_mode(self):
         self.compatibility_mode = not self.compatibility_mode
@@ -1114,10 +1193,10 @@ class DynamicIsland(QWidget):
         menu = QMenu(self); menu.setStyleSheet("QMenu { background-color: #1a1a1a; color: #fff; border: 1px solid #333; padding: 4px; border-radius: 6px; } QMenu::item:selected { background-color: " + self.accent_color + "; }")
         am = menu.addMenu("Animation Style")
         for s in ["Glow Sweep", "Fluid Blobs", "Neon Border"]:
-            a = am.addAction(s); a.setCheckable(True); a.setChecked(self.animation_style == s); a.triggered.connect(lambda _, st=s: setattr(self, 'animation_style', st))
+            a = am.addAction(s); a.setCheckable(True); a.setChecked(self.animation_style == s); a.triggered.connect(lambda _, st=s: self.set_animation_style(st))
         sm = menu.addMenu("Island Style")
-        for s in ["Default", "Liquid Glass"]:
-            a = sm.addAction(s); a.setCheckable(True); a.setChecked(self.island_style == s); a.triggered.connect(lambda _, st=s: setattr(self, 'island_style', st))
+        for s in ["Default", "Liquid Glass", "Notch Nook"]:
+            a = sm.addAction(s); a.setCheckable(True); a.setChecked(self.island_style == s); a.triggered.connect(lambda _, st=s: self.set_island_style(st))
         
         menu.addSeparator()
         comp_action = menu.addAction("Fix Big Box (Compatibility Mode)")
@@ -1140,4 +1219,6 @@ class DynamicIsland(QWidget):
         super().closeEvent(event)
 
 if __name__ == "__main__":
-    app = QApplication(sys.argv); island = DynamicIsland(); island.show(); sys.exit(app.exec())
+    app = QApplication(sys.argv); island = DynamicIsland(); island.show()
+    QTimer.singleShot(100, lambda: (island.update_island_geometry(island.get_island_rect(), island.get_current_radius()), island.content_container.move(15, 0), island.update()))
+    sys.exit(app.exec())
