@@ -55,10 +55,10 @@ For those who prefer a more integrated look, the "Notch Nook" style replaces the
 
 ### Showcase Gallery
 
-![Notch Nook](src/dynamic_island1.jpg)
-![Notch Nook](src/dynamic_island3.jpg)
-![Notch Nook](src/dynamic_island4.jpg)
-![Notch Nook](src/dynamic_island5.jpg)
+![Notch Nook](src/Dynamic%20island1.jpg)
+![Notch Nook](src/Dynamic%20island3.jpg)
+![Notch Nook](src/Dynamic%20island4.jpg)
+![Notch Nook](src/Dynamic%20island5.jpg)
 
 ## Installation
 
