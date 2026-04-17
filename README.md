@@ -51,7 +51,7 @@ Tailor the experience to your liking. Right-click the island to access settings 
 ### Notch Nook Style
 For those who prefer a more integrated look, the "Notch Nook" style replaces the floating island with a sleek, top-centered notch that anchors directly to the screen edge.
 
-![Notch Nook](src/Notch_Nook.png)
+![Notch Nook](src/Notch_Nook.jpg)
 
 ## Installation
 
