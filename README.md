@@ -48,6 +48,11 @@ Tailor the experience to your liking. Right-click the island to access settings 
 ![Context Menu](src/Dynamic%20Island%204.jpg)
 ![Settings](src/Dynamic%20Island%206.jpg)
 
+### Notch Nook Style
+For those who prefer a more integrated look, the "Notch Nook" style replaces the floating island with a sleek, top-centered notch that anchors directly to the screen edge.
+
+![Notch Nook](src/Notch_Nook.png)
+
 ## Installation
 
 1. Clone the repository:
