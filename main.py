@@ -21,13 +21,21 @@ from notification_monitor import NotificationMonitor
 from weather_monitor import WeatherMonitor
 from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, 
                              QLabel, QMenu, QPushButton, QGraphicsOpacityEffect, 
-                             QGridLayout, QFrame, QProgressBar, QInputDialog)
+                             QGridLayout, QFrame, QProgressBar, QInputDialog,
+                             QDialog, QLineEdit, QListWidget, QListWidgetItem,
+                             QComboBox, QScrollArea)
 
                
 DWMWA_SYSTEMBACKDROP_TYPE = 38
 DWMWA_WINDOW_CORNER_PREFERENCE = 33
 DWMSBT_DISABLE = 1
 DWMWCP_ROUND = 2
+
+DEFAULT_TASKS = [
+    {"name": "Project Sync", "category": "Work", "color": "#00A0FF", "time": "2:00 PM"},
+    {"name": "Gym Session", "category": "Health", "color": "#00FF80", "time": "5:30 PM"},
+    {"name": "Dinner with Family", "category": "Personal", "color": "#FF5050", "time": "8:00 PM"}
+]
 
 class ControlBall(QPushButton):
     def __init__(self, parent=None):
@@ -97,6 +105,8 @@ class ControlBall(QPushButton):
         else:
             self._current_anim.start()
 
+# TaskEditorDialog class removed since we are integrating it directly into the island.
+
 class DynamicIsland(QWidget):
     def __init__(self):
         super().__init__()
@@ -139,6 +149,9 @@ class DynamicIsland(QWidget):
         self.charging_anim.setDuration(3000)
         self.charging_anim.setEasingCurve(QEasingCurve.Type.InOutSine)
         
+        self.is_dialog_open = False
+        self.is_editing_tasks = False
+        
         self._weather_bg_opacity = 0.0
         self.weather_bg_anim = QPropertyAnimation(self, b"weather_bg_opacity")
         self.weather_bg_anim.setDuration(1200)
@@ -172,8 +185,9 @@ class DynamicIsland(QWidget):
         self.MUSIC_W, self.MUSIC_H = 420, 40
         self.NOTIFY_W, self.NOTIFY_H = 380, 40
         self.WEATHER_W, self.WEATHER_H = 360, 160
-        self.CALENDAR_W, self.CALENDAR_H = 360, 165
+        self.CALENDAR_W, self.CALENDAR_H = 420, 165
         self.MONTH_W, self.MONTH_H = 360, 140
+        self.EDIT_W, self.EDIT_H = 540, 520
         self.WIDE_W = 1200                                             
         
         self.is_charging = False
@@ -216,7 +230,7 @@ class DynamicIsland(QWidget):
         self.hit_timer = QTimer(self); self.hit_timer.timeout.connect(self.check_mouse_position); self.hit_timer.start(25)
         
                                                                             
-        self.setFixedSize(1200, 300); self.recenter_window()
+        self.setFixedSize(1200, 700); self.recenter_window()
         
         self.anim_group = QParallelAnimationGroup()
         self.opacity_anim = QPropertyAnimation(self.content_opacity, b"opacity"); self.opacity_anim.setDuration(850); self.opacity_anim.setEasingCurve(QEasingCurve.Type.InOutSine)
@@ -258,9 +272,12 @@ class DynamicIsland(QWidget):
                 with open(self.config_path, "r") as f:
                     self.settings = json.load(f)
             except:
-                self.settings = {"location": "Varanasi, India", "lat": 25.3333, "lon": 83.0, "compatibility_mode": False}
+                self.settings = {"location": "Varanasi, India", "lat": 25.3333, "lon": 83.0, "compatibility_mode": False, "tasks": DEFAULT_TASKS}
         else:
-            self.settings = {"location": "Varanasi, India", "lat": 25.3333, "lon": 83.0, "compatibility_mode": False}
+            self.settings = {"location": "Varanasi, India", "lat": 25.3333, "lon": 83.0, "compatibility_mode": False, "tasks": DEFAULT_TASKS}
+        
+        if "tasks" not in self.settings:
+            self.settings["tasks"] = DEFAULT_TASKS
         
         self.compatibility_mode = self.settings.get("compatibility_mode", False)
         self.island_style = self.settings.get("island_style", "Default")
@@ -279,6 +296,7 @@ class DynamicIsland(QWidget):
         self.settings["compatibility_mode"] = self.compatibility_mode
         self.settings["island_style"] = self.island_style
         self.settings["animation_style"] = self.animation_style
+        # self.settings["tasks"] is updated directly by the task editor or elsewhere
         with open(self.config_path, "w") as f:
             json.dump(self.settings, f, indent=4)
 
@@ -510,10 +528,11 @@ class DynamicIsland(QWidget):
         self.main_layout = QVBoxLayout(self); self.main_layout.setContentsMargins(0, 0, 0, 0); self.main_layout.setSpacing(0)
         self.island_root = QWidget(self)
         self.island_root.setObjectName("IslandRoot")
-        self.island_root_layout = QVBoxLayout(self.island_root); self.island_root_layout.setContentsMargins(15, 0, 15, 0); self.island_root_layout.setSpacing(0)
+        # Reduced horizontal margins from 15 to 5 to prevent clipping of wide content
+        self.island_root_layout = QVBoxLayout(self.island_root); self.island_root_layout.setContentsMargins(5, 0, 5, 0); self.island_root_layout.setSpacing(0)
         self.content_container = QWidget(); self.content_layout = QVBoxLayout(self.content_container); self.content_layout.setContentsMargins(0, 0, 0, 0); self.content_layout.setSpacing(0)
         self.content_opacity = QGraphicsOpacityEffect(self.content_container); self.content_container.setGraphicsEffect(self.content_opacity)
-        self.header_widget = QWidget(); self.header_layout = QHBoxLayout(self.header_widget); self.header_layout.setContentsMargins(0, 0, 0, 0); self.header_layout.setSpacing(10)
+        self.header_widget = QWidget(); self.header_layout = QHBoxLayout(self.header_widget); self.header_layout.setContentsMargins(25, 0, 25, 0); self.header_layout.setSpacing(10)
         self.status_icon = QLabel(); self.status_icon.setObjectName("IconLabel"); self.status_icon.setFixedSize(22, 22)
         self.status_icon.setPixmap(qta.icon('mdi.circle', color=self.accent_color).pixmap(20, 20))
         self.status_text = QLabel(""); self.status_text.setObjectName("TitleLabel")
@@ -554,7 +573,7 @@ class DynamicIsland(QWidget):
         self.content_layout.addWidget(self.basics_panel)
         
         self.island_root_layout.addWidget(self.content_container); self.update_content()
-        self.content_container.move(15, 0)
+        # Removed hardcoded move(15, 0) which was causing right-side clipping
         self.update_island_geometry(self.get_island_rect(), self.get_current_radius())
 
     def setup_monitors(self):
@@ -783,18 +802,17 @@ class DynamicIsland(QWidget):
         return btn
 
     def open_app(self, app_type):
-        schemes = {"weather": "bingweather:", "calendar": "outlookcal:", "month": "ms-settings:dateandtime"}
+        schemes = {"weather": "bingweather:", "month": "ms-settings:dateandtime"}
         if app_type in schemes: webbrowser.open(schemes[app_type])
 
     def create_weather_panel(self):
-        w = QWidget(); l = QVBoxLayout(w); l.setContentsMargins(10, 10, 10, 15); l.setSpacing(12)
+        w = QWidget(); l = QVBoxLayout(w); l.setContentsMargins(25, 10, 25, 15); l.setSpacing(12)
         h1 = QHBoxLayout(); self.weather_temp_label = QLabel("--°"); self.weather_temp_label.setStyleSheet("font-size: 38px; font-weight: bold;")
         info = QVBoxLayout(); 
         loc_name = self.settings.get("location", "Varanasi, India")
         self.weather_city_label = QLabel(loc_name); self.weather_city_label.setStyleSheet("font-size: 14px; font-weight: 600;")
         self.weather_cond_label = QLabel("Loading..."); self.weather_cond_label.setStyleSheet("font-size: 11px; color: #AAA;")
         info.addWidget(self.weather_city_label); info.addWidget(self.weather_cond_label); h1.addLayout(info); h1.addStretch(); h1.addWidget(self.weather_temp_label)
-        h1.addWidget(self.create_action_button("weather"))
         l.addLayout(h1)
         self.hourly_layout = QHBoxLayout(); self.hourly_layout.setSpacing(5)
                            
@@ -818,22 +836,167 @@ class DynamicIsland(QWidget):
                 si.setPixmap(qta.icon(slot["icon"], color='white').pixmap(18, 18))
                 stp.setText(slot["temp"])
 
+        
     def create_calendar_panel(self):
-        w = QWidget(); l = QVBoxLayout(w); l.setContentsMargins(10, 8, 10, 15); l.setSpacing(10)
-        header = QHBoxLayout(); title = QLabel("Today"); title.setStyleSheet("font-weight: bold; font-size: 14px;")
-        ev_count = QLabel("3 events"); ev_count.setStyleSheet("color: #888; font-size: 11px;")
-        header.addWidget(title); header.addStretch(); header.addWidget(ev_count); header.addWidget(self.create_action_button("calendar"))
-        l.addLayout(header)
-        for name, cat, color, time in [("Project Sync", "Work", "#00A0FF", "2:00 PM"), ("Gym Session", "Health", "#00FF80", "5:30 PM"), ("Dinner with Family", "Personal", "#FF5050", "8:00 PM")]:
-            row = QHBoxLayout(); bar = QFrame(); bar.setFixedWidth(3); bar.setStyleSheet(f"background-color: {color}; border-radius: 1px;")
+        self.calendar_panel_widget = QWidget()
+        # Initial size for View Mode
+        self.calendar_panel_widget.setFixedSize(self.CALENDAR_W, self.CALENDAR_H)
+        cal_layout = QVBoxLayout(self.calendar_panel_widget)
+        cal_layout.setContentsMargins(0, 0, 0, 0); cal_layout.setSpacing(0)
+        
+        # View Mode Container
+        self.task_view_widget = QWidget()
+        view_layout = QVBoxLayout(self.task_view_widget)
+        # Increased horizontal padding for a centered, narrower content look
+        view_layout.setContentsMargins(25, 12, 25, 18); view_layout.setSpacing(12)
+        
+        h = QHBoxLayout(); t = QLabel("Next Up"); t.setStyleSheet("font-weight: bold; font-size: 15px;")
+        self.ev_count_label = QLabel("0 tasks"); self.ev_count_label.setStyleSheet("color: #888; font-size: 11px;")
+        eb = self.create_action_button("calendar"); eb.setIcon(qta.icon("mdi.pencil", color="white")); eb.clicked.connect(self.open_task_editor)
+        # Move pencil to the left to avoid overflow
+        h.addWidget(eb); h.addSpacing(5); h.addWidget(t); h.addWidget(self.ev_count_label); h.addStretch()
+        view_layout.addLayout(h)
+        
+        self.tasks_container_widget = QWidget()
+        self.tasks_container_layout = QVBoxLayout(self.tasks_container_widget)
+        self.tasks_container_layout.setContentsMargins(0, 0, 0, 0); self.tasks_container_layout.setSpacing(10)
+        view_layout.addWidget(self.tasks_container_widget); view_layout.addStretch()
+        
+        # Edit Mode Container
+        self.task_edit_widget = QWidget(); self.task_edit_widget.hide()
+        edit_layout = QVBoxLayout(self.task_edit_widget)
+        # Increased horizontal padding to 25px to make content narrower and centered
+        edit_layout.setContentsMargins(25, 20, 25, 20); edit_layout.setSpacing(15)
+        
+        # Syncing with TaskEditorDialog's premium style but within panel
+        self.edit_list = QListWidget()
+        self.edit_list.setStyleSheet(f"QListWidget {{ background: transparent; border: none; }} QListWidget::item {{ background: rgba(255,255,255,10); border-radius: 10px; padding: 10px; margin-bottom: 5px; }} QListWidget::item:selected {{ border: 1px solid {self.accent_color}; }}")
+        
+        # Inputs with glassmorphism styling
+        input_grid = QGridLayout(); input_grid.setSpacing(10)
+        input_style = f"QLineEdit, QComboBox {{ background-color: rgba(255, 255, 255, 12); border: 1px solid rgba(255, 255, 255, 15); border-radius: 8px; color: white; padding: 10px; font-size: 13px; }} QLineEdit:focus {{ border: 1px solid {self.accent_color}; }}"
+        self.edit_name = QLineEdit(); self.edit_name.setPlaceholderText("Task Name"); self.edit_name.setStyleSheet(input_style)
+        self.edit_time = QLineEdit(); self.edit_time.setPlaceholderText("Time (e.g. 3:00 PM)"); self.edit_time.setStyleSheet(input_style)
+        self.edit_cat = QComboBox(); self.edit_cat.addItems(["Work", "Health", "Personal", "Study", "Other"]); self.edit_cat.setStyleSheet(input_style)
+        
+        input_grid.addWidget(self.edit_name, 0, 0, 1, 2)
+        input_grid.addWidget(self.edit_time, 1, 0)
+        input_grid.addWidget(self.edit_cat, 1, 1)
+        
+        # Buttons with premium feel
+        btn_style = "QPushButton { background-color: rgba(255, 255, 255, 10); color: white; border: 1px solid rgba(255, 255, 255, 15); border-radius: 10px; padding: 10px; font-weight: 600; } QPushButton:hover { background-color: rgba(255, 255, 255, 20); }"
+        btn_layout = QHBoxLayout()
+        add_btn = QPushButton("Add"); add_btn.clicked.connect(self.add_task_integrated); add_btn.setStyleSheet(btn_style)
+        del_btn = QPushButton("Delete Selected"); del_btn.clicked.connect(self.delete_task_integrated); del_btn.setStyleSheet(btn_style)
+        # Using "and" instead of "&" to avoid mnemonic behavior in Qt
+        save_btn = QPushButton("Save and Close"); save_btn.setStyleSheet(f"background-color: {self.accent_color}; color: white; border-radius: 10px; padding: 12px; font-weight: bold;")
+        save_btn.clicked.connect(self.save_and_close_editor)
+        
+        btn_layout.addWidget(add_btn); btn_layout.addWidget(del_btn)
+        
+        edit_layout.addWidget(QLabel("Manage Tasks", styleSheet="font-weight: bold; font-size: 16px;"))
+        edit_layout.addWidget(self.edit_list)
+        edit_layout.addLayout(input_grid)
+        edit_layout.addLayout(btn_layout)
+        edit_layout.addWidget(save_btn)
+        
+        cal_layout.addWidget(self.task_view_widget)
+        cal_layout.addWidget(self.task_edit_widget)
+        
+        self.refresh_calendar_panel()
+        return self.calendar_panel_widget
+
+    def add_task_integrated(self):
+        name = self.edit_name.text()
+        if name:
+            tasks = self.settings.get("tasks", [])
+            tasks.append({"name": name, "category": self.edit_cat.currentText(), "time": self.edit_time.text() or "N/A", "color": "#00A0FF"})
+            self.settings["tasks"] = tasks
+            self.refresh_calendar_panel(); self.edit_name.clear(); self.edit_time.clear()
+
+    def delete_task_integrated(self):
+        idx = self.edit_list.currentRow()
+        if idx >= 0:
+            tasks = self.settings.get("tasks", [])
+            tasks.pop(idx); self.settings["tasks"] = tasks
+            self.refresh_calendar_panel()
+
+    def save_and_close_editor(self):
+        self.save_settings()
+        self.open_task_editor() # Toggle back
+
+    def open_task_editor(self):
+        self.is_editing_tasks = not self.is_editing_tasks
+        self.task_view_widget.setVisible(not self.is_editing_tasks)
+        self.task_edit_widget.setVisible(self.is_editing_tasks)
+        
+        # Adjust internal widget size based on mode
+        if self.is_editing_tasks:
+            self.calendar_panel_widget.setFixedSize(self.EDIT_W, self.EDIT_H)
+        else:
+            self.calendar_panel_widget.setFixedSize(self.CALENDAR_W, self.CALENDAR_H)
+            
+        # Toggle compatibility mode for stability
+        if self.is_editing_tasks:
+            self._prev_comp = self.compatibility_mode
+            self.compatibility_mode = True
+        else:
+            self.compatibility_mode = getattr(self, "_prev_comp", self.compatibility_mode)
+            
+        self.recenter_window()
+        self.execute_liquid_transition()
+
+    def refresh_calendar_panel(self):
+        # Deep clean existing tasks to prevent overlapping ghost widgets
+        for child in self.tasks_container_widget.findChildren(QWidget):
+            child.hide()
+            child.setParent(None)
+            child.deleteLater()
+            
+        while self.tasks_container_layout.count():
+            item = self.tasks_container_layout.takeAt(0)
+            if item.layout():
+                # Manually clear sub-layouts if any remain
+                while item.layout().count():
+                    si = item.layout().takeAt(0)
+                    if si.widget(): si.widget().deleteLater()
+            
+        tasks = self.settings.get("tasks", DEFAULT_TASKS)
+        self.ev_count_label.setText(f"{len(tasks)} tasks")
+        
+        # Update integrated edit list
+        self.edit_list.clear()
+        for t in tasks:
+            item = QListWidgetItem(f"{t['name']} • {t['time']}\n{t.get('category', 'Task').upper()}")
+            self.edit_list.addItem(item)
+        
+        # Rebuild view list
+        shown_count = 0
+        for t in tasks[:3]: # Show only first 3 in view mode
+            shown_count += 1
+            row = QHBoxLayout()
+            bar = QFrame(); bar.setFixedWidth(3); bar.setStyleSheet(f"background-color: {t.get('color', '#00A0FF')}; border-radius: 1px;")
             det = QVBoxLayout(); det.setContentsMargins(0, 0, 0, 0); det.setSpacing(1)
-            n = QLabel(name); n.setStyleSheet("font-size: 13px; font-weight: 600; padding: 0px;"); c = QLabel(cat); c.setStyleSheet("font-size: 10px; color: #888; padding: 0px;")
-            det.addWidget(n); det.addWidget(c); tm = QLabel(time); tm.setStyleSheet("font-size: 11px; font-weight: 500;")
-            row.addWidget(bar); row.addLayout(det); row.addStretch(); row.addWidget(tm); l.addLayout(row)
-        return w
+            n = QLabel(t['name']); n.setStyleSheet("font-size: 13px; font-weight: 600; padding: 0px;")
+            c = QLabel(t.get('category', 'Task')); c.setStyleSheet("font-size: 10px; color: #888; padding: 0px;")
+            det.addWidget(n); det.addWidget(c)
+            tm = QLabel(t.get('time', '')); tm.setStyleSheet("font-size: 11px; font-weight: 500;")
+            row.addWidget(bar); row.addLayout(det); row.addStretch(); row.addWidget(tm)
+            self.tasks_container_layout.addLayout(row)
+            
+        # Calculate dynamic height for View Mode
+        # Base height (Header + Margins) approx 80px, each task approx 35px for better breathing room
+        self.CALENDAR_H = 80 + (shown_count * 35)
+        if shown_count == 0: self.CALENDAR_H = 105
+        
+        if not self.is_editing_tasks:
+            self.calendar_panel_widget.setFixedSize(self.CALENDAR_W, self.CALENDAR_H)
+            # If we are in Hover state and looking at calendar, trigger a smooth transition to new size
+            if self.current_state == "Hover" and self.features[self.current_feature_index] == "calendar":
+                self.execute_liquid_transition()
 
     def create_perf_panel(self):
-        w = QWidget(); l = QVBoxLayout(w); l.setContentsMargins(15, 12, 15, 18); l.setSpacing(12)
+        w = QWidget(); l = QVBoxLayout(w); l.setContentsMargins(25, 12, 25, 18); l.setSpacing(12)
         header = QHBoxLayout(); title = QLabel("System Status"); title.setStyleSheet("font-weight: bold; font-size: 15px;")
         header.addWidget(title); header.addStretch(); header.addWidget(self.create_action_button("month"))           
         l.addLayout(header)
@@ -869,7 +1032,7 @@ class DynamicIsland(QWidget):
         return w
 
     def create_month_panel(self):
-        w = QWidget(); l = QVBoxLayout(w); l.setContentsMargins(10, 8, 10, 18); l.setSpacing(8)
+        w = QWidget(); l = QVBoxLayout(w); l.setContentsMargins(25, 8, 25, 18); l.setSpacing(8)
         now = datetime.datetime.now(); days = (datetime.date(now.year, now.month + 1, 1) - datetime.date(now.year, now.month, 1)).days if now.month < 12 else 31
         header = QHBoxLayout(); title = QLabel(now.strftime("%B Progress")); title.setStyleSheet("font-weight: bold; font-size: 14px;")
         perc = QLabel(f"{int(now.day/days*100)}%"); perc.setStyleSheet("color: #00A0FF; font-weight: bold; font-size: 14px;")
@@ -881,7 +1044,7 @@ class DynamicIsland(QWidget):
         l.addLayout(grid); return w
 
     def create_basics_panel(self):
-        w = QWidget(); l = QHBoxLayout(w); l.setContentsMargins(10, 0, 10, 0); l.setSpacing(10); l.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        w = QWidget(); l = QHBoxLayout(w); l.setContentsMargins(25, 0, 25, 0); l.setSpacing(10); l.setAlignment(Qt.AlignmentFlag.AlignCenter)
         btn_l = QPushButton("<", objectName="NavButton"); btn_r = QPushButton(">", objectName="NavButton")
         btn_l.clicked.connect(lambda: self.scroll_controls(-1)); btn_r.clicked.connect(lambda: self.scroll_controls(1))
         lbl = QLabel("Basics"); lbl.setStyleSheet("font-size: 15px; font-weight: 700; color: #BBB; letter-spacing: 1.2px;")
@@ -968,7 +1131,7 @@ class DynamicIsland(QWidget):
             self.status_icon.setPixmap(qta.icon('mdi.music', color='white').pixmap(18, 18))
 
     def wheelEvent(self, event):
-        if self.current_state == "Hover":
+        if self.current_state == "Hover" and not self.is_editing_tasks:
             delta = event.angleDelta().y()
             self.current_feature_index = (self.current_feature_index + (1 if delta < 0 else -1)) % len(self.features)
             self.execute_liquid_transition()
@@ -1076,7 +1239,8 @@ class DynamicIsland(QWidget):
             if feature == "media": w, h = (self.LYRIC_W, self.MUSIC_H) if self.showing_lyrics else (self.MUSIC_W, self.MUSIC_H)
             elif feature == "perf": w, h = self.PERF_W, self.PERF_H
             elif feature == "weather": w, h = self.WEATHER_W, self.WEATHER_H
-            elif feature == "calendar": w, h = self.CALENDAR_W, self.CALENDAR_H
+            elif feature == "calendar": 
+                w, h = (self.EDIT_W, self.EDIT_H) if self.is_editing_tasks else (self.CALENDAR_W, self.CALENDAR_H)
             elif feature == "month": w, h = self.MONTH_W, self.MONTH_H
             elif feature == "basics": w, h = self.IDLE_W, self.IDLE_H                    
             else: w, h = self.EXP_W, self.EXP_H
@@ -1099,8 +1263,8 @@ class DynamicIsland(QWidget):
         set_bg_target(self.month_bg_anim, self._month_bg_opacity, 1.0 if feat == "month" else 0.0)
 
         self.anim_group.stop()
-        self.content_pos_anim.setStartValue(QPoint(15, 0))
-        self.content_pos_anim.setEndValue(QPoint(-10, 0))
+        self.content_pos_anim.setStartValue(QPoint(0, 0))
+        self.content_pos_anim.setEndValue(QPoint(0, 0))
         self.opacity_anim.setStartValue(1.0); self.opacity_anim.setKeyValueAt(0.3, 0.0); self.opacity_anim.setEndValue(1.0)
         self.island_w_anim.setStartValue(self._island_w); self.island_w_anim.setEndValue(w)
         self.island_h_anim.setStartValue(self._island_h); self.island_h_anim.setEndValue(h)
@@ -1112,7 +1276,7 @@ class DynamicIsland(QWidget):
         current_y = self.content_container.y()
         self.content_pos_anim.stop()
         self.content_pos_anim.setStartValue(QPoint(target_w // 4, current_y))
-        self.content_pos_anim.setEndValue(QPoint(15, current_y))
+        self.content_pos_anim.setEndValue(QPoint(0, current_y))
         self.content_pos_anim.start()
 
     def change_state(self, new):
@@ -1148,7 +1312,7 @@ class DynamicIsland(QWidget):
             sr = self.screen().availableGeometry()
             self.setGeometry(sr)
         else:
-            self.setFixedSize(1200, 300)
+            self.setFixedSize(1200, 700)
             top_y = 0 if self.island_style == "Notch Nook" else 10
             self.move(self.get_centered_x(self.width()), top_y)
 
@@ -1160,7 +1324,7 @@ class DynamicIsland(QWidget):
         self.update()
 
     def check_mouse_position(self):
-        if self.current_state == "Notify": return
+        if self.current_state == "Notify" or self.is_dialog_open: return
         cursor_pos = QCursor.pos()
         rect = self.get_island_rect()
         
@@ -1220,5 +1384,5 @@ class DynamicIsland(QWidget):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv); island = DynamicIsland(); island.show()
-    QTimer.singleShot(100, lambda: (island.update_island_geometry(island.get_island_rect(), island.get_current_radius()), island.content_container.move(15, 0), island.update()))
+    QTimer.singleShot(100, lambda: (island.update_island_geometry(island.get_island_rect(), island.get_current_radius()), island.content_container.move(0, 0), island.update()))
     sys.exit(app.exec())

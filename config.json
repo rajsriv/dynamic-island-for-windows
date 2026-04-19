@@ -1,5 +1,28 @@
 {
     "location": "Varanasi, India",
     "lat": 25.31668,
-    "lon": 83.01041
+    "lon": 83.01041,
+    "tasks": [
+        {
+            "name": "Project Sync",
+            "category": "Work",
+            "color": "#00A0FF",
+            "time": "2:00 PM"
+        },
+        {
+            "name": "Gym Session",
+            "category": "Health",
+            "color": "#00FF80",
+            "time": "5:30 PM"
+        },
+        {
+            "name": "Coding",
+            "category": "Study",
+            "time": "3:00 PM",
+            "color": "#00A0FF"
+        }
+    ],
+    "compatibility_mode": true,
+    "island_style": "Default",
+    "animation_style": "Fluid Blobs"
 }
